@@ -13,6 +13,7 @@ module Challenges (TileEdge(..),Tile(..),Puzzle,isPuzzleComplete,
 
 -- Import standard library and parsing definitions from Hutton 2016, Chapter 13
 import Parsing
+import Data.List
 
 -- Challenge 1
 -- Testing Circuits
@@ -20,9 +21,80 @@ import Parsing
 data TileEdge = North | East | South | West  deriving (Eq,Ord,Show,Read)
 data Tile = Source [ TileEdge ] | Sink [ TileEdge ] | Wire [ TileEdge ]  deriving (Eq,Show,Read)
 type Puzzle = [ [ Tile ] ]
+type TileCoords = (Int, Int)
 
 isPuzzleComplete :: Puzzle -> Bool
-isPuzzleComplete = undefined
+isPuzzleComplete puzzle = areWiresConnected puzzle && sourcesLinkedSinks puzzle && sinksLinkedSources puzzle
+
+areWiresConnected :: Puzzle -> Bool
+areWiresConnected puzzle = all (\coords -> all (isConnected coords) (getNeighborCoords coords)) wireCoords
+  where
+    wireCoords :: [TileCoords]
+    wireCoords = [(i,j) | i <- [0..length puzzle - 1], j <- [0..length (head puzzle) - 1], isWire (puzzle !! i !! j)]
+    getNeighborCoords :: TileCoords -> [TileCoords]
+    getNeighborCoords (x, y) = filter isCoordValid [(x - 1, y), (x, y - 1), (x, y - 1), (x, y + 1)]
+    isCoordValid :: TileCoords -> Bool
+    isCoordValid (x, y) = x >= 0 && x < length puzzle && y < length (head puzzle)
+    isConnected :: TileCoords -> TileCoords -> Bool
+    isConnected coord1 coord2 = any (connectedEdge coord1 coord2) (getEdges (puzzle !! fst coord1 !! snd coord1)) && notConnectedTo coord1 && notConnectedTo coord2 
+    connectedEdge :: TileCoords -> TileCoords -> TileEdge -> Bool
+    connectedEdge (x1, y1) (x2, y2) edges
+      | x1 < x2 && edges == South = True
+      | x1 > x2 && edges == North = True
+      | y1 < y2 && edges == East = True
+      | y1 > y2 && edges == West = True
+      | otherwise = False
+
+    notConnectedTo :: TileCoords -> Bool
+    notConnectedTo (x, y)
+      | x == 0 && North `elem` getEdges (puzzle !! x !! y) = False
+      | x == length puzzle - 1 && South `elem` getEdges (puzzle !! x !! y) = False
+      | y == 0 && West `elem` getEdges (puzzle !! x !! y) = False
+      | y == length (head puzzle) && East `elem` getEdges (puzzle !! x !! y) = False
+
+sourcesLinkedSinks :: Puzzle -> Bool
+sourcesLinkedSinks puzzle1 = all (\sink -> any (\source -> hasPath puzzle1 sink source)sources) sinks 
+  where
+    sources = [(i, j) | i <- [0..length puzzle1 - 1], j <- [0..length (head puzzle1) - 1], isSource (puzzle1 !! i !! j)]
+    sinks= [(i, j) | i <- [0..length puzzle1 - 1], j <- [0..length (head puzzle1) - 1], isSink (puzzle1 !! i !! j)]
+
+sinksLinkedSources :: Puzzle -> Bool
+sinksLinkedSources puzzle1 = all (\source -> any (\sink -> hasPath puzzle1 source sink)sinks) sources 
+  where
+    sources = [(i, j) | i <- [0..length puzzle1 - 1], j <- [0..length (head puzzle1) - 1], isSource (puzzle1 !! i !! j)]
+    sinks= [(i, j) | i <- [0..length puzzle1 - 1], j <- [0..length (head puzzle1) - 1], isSink (puzzle1 !! i !! j)]
+
+getEdges :: Tile -> [TileEdge]
+getEdges (Source edges) = edges
+getEdges (Sink edges) = edges
+getEdges (Wire edges) = edges
+
+isWire :: Tile -> Bool
+isWire (Wire _) = True
+isWire _ = False
+
+isSource :: Tile -> Bool
+isSource (Source _) = True
+isSource _ = False
+
+isSink :: Tile -> Bool
+isSink (Sink _) = True
+isSink _ = False
+
+hasPath :: Puzzle -> TileCoords -> TileCoords -> Bool
+hasPath puzzle1 coordsHead coordsTail = dfs coordsHead coordsTail []
+  where
+    dfs :: TileCoords -> TileCoords -> [TileCoords] -> Bool
+    dfs currentCoord targetCoord visited
+      | currentCoord == targetCoord = True
+      | currentCoord `elem` visited = False
+      | otherwise = any (\candidate -> dfs candidate targetCoord (currentCoord : visited)) candidates
+        where
+          candidates :: [TileCoords]
+          candidates = filter (`notElem` visited) (getCandidates currentCoord)
+          getCandidates :: TileCoords -> [TileCoords]
+          getCandidates (x,y) = [(x-1, y), (x+1,y), (x,y-1), (x,y+1)]
+
 
 -- Challenge 2
 -- Solving Circuits
