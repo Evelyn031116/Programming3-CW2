@@ -36,13 +36,17 @@ areWiresConnected puzzle = all (\coords -> all (isConnected coords) (getNeighbor
     isCoordValid :: TileCoords -> Bool
     isCoordValid (x, y) = x >= 0 && x < length puzzle && y < length (head puzzle)
     isConnected :: TileCoords -> TileCoords -> Bool
-    isConnected coord1 coord2 = any (connectedEdge coord1 coord2) (getEdges (puzzle !! fst coord1 !! snd coord1)) && notConnectedTo coord1 && notConnectedTo coord2 
-    connectedEdge :: TileCoords -> TileCoords -> TileEdge -> Bool
-    connectedEdge (x1, y1) (x2, y2) edges
-      | x1 < x2 && edges == South = True
-      | x1 > x2 && edges == North = True
-      | y1 < y2 && edges == East = True
-      | y1 > y2 && edges == West = True
+    isConnected coord1 coord2 = connectedEdge coord1 coord2 (getEdges (puzzle !! fst coord1 !! snd coord1)) (getEdges (puzzle !! fst coord2 !! snd coord2)) && notConnectedTo coord1 && notConnectedTo coord2 
+    connectedEdge :: TileCoords -> TileCoords -> [TileEdge] -> [TileEdge] -> Bool
+    connectedEdge (x1, y1) (x2, y2) edges1 edges2
+      | x1 < x2 && South `elem` edges1 && North `elem` edges2 = True
+      | x1 > x2 && North `elem` edges1 && South `elem` edges2 = True
+      | y1 < y2 && East `elem` edges1 && West `elem` edges2 = True
+      | y1 > y2 && West `elem` edges1 && East `elem` edges2 = True
+      | x1 < x2 && South `notElem` edges1 && North `notElem` edges2 = True
+      | x1 > x2 && North `notElem` edges1 && South `notElem` edges2 = True
+      | y1 < y2 && East `notElem` edges1 && West `notElem` edges2 = True
+      | y1 > y2 && West `notElem` edges1 && East `notElem` edges2 = True
       | otherwise = False
 
     notConnectedTo :: TileCoords -> Bool
@@ -53,16 +57,20 @@ areWiresConnected puzzle = all (\coords -> all (isConnected coords) (getNeighbor
       | y == length (head puzzle) && East `elem` getEdges (puzzle !! x !! y) = False
 
 sourcesLinkedSinks :: Puzzle -> Bool
-sourcesLinkedSinks puzzle1 = all (\sink -> any (\source -> hasPath puzzle1 sink source)sources) sinks 
-  where
-    sources = [(i, j) | i <- [0..length puzzle1 - 1], j <- [0..length (head puzzle1) - 1], isSource (puzzle1 !! i !! j)]
-    sinks= [(i, j) | i <- [0..length puzzle1 - 1], j <- [0..length (head puzzle1) - 1], isSink (puzzle1 !! i !! j)]
+sourcesLinkedSinks puzzle1 
+ | null sources = False
+ | otherwise = all (\sink -> any (\source -> hasPath puzzle1 sink source)sources) sinks 
+   where
+     sources = [(i, j) | i <- [0..length puzzle1 - 1], j <- [0..length (head puzzle1) - 1], isSource (puzzle1 !! i !! j)]
+     sinks= [(i, j) | i <- [0..length puzzle1 - 1], j <- [0..length (head puzzle1) - 1], isSink (puzzle1 !! i !! j)]
 
 sinksLinkedSources :: Puzzle -> Bool
-sinksLinkedSources puzzle1 = all (\source -> any (\sink -> hasPath puzzle1 source sink)sinks) sources 
-  where
-    sources = [(i, j) | i <- [0..length puzzle1 - 1], j <- [0..length (head puzzle1) - 1], isSource (puzzle1 !! i !! j)]
-    sinks= [(i, j) | i <- [0..length puzzle1 - 1], j <- [0..length (head puzzle1) - 1], isSink (puzzle1 !! i !! j)]
+sinksLinkedSources puzzle1
+  | null sinks = False
+  | otherwise = all (\source -> any (\sink -> hasPath puzzle1 source sink)sinks) sources 
+    where
+      sources = [(i, j) | i <- [0..length puzzle1 - 1], j <- [0..length (head puzzle1) - 1], isSource (puzzle1 !! i !! j)]
+      sinks= [(i, j) | i <- [0..length puzzle1 - 1], j <- [0..length (head puzzle1) - 1], isSink (puzzle1 !! i !! j)]
 
 getEdges :: Tile -> [TileEdge]
 getEdges (Source edges) = edges
@@ -93,8 +101,12 @@ hasPath puzzle1 coordsHead coordsTail = dfs coordsHead coordsTail []
           candidates :: [TileCoords]
           candidates = filter (`notElem` visited) (getCandidates currentCoord)
           getCandidates :: TileCoords -> [TileCoords]
-          getCandidates (x,y) = [(x-1, y), (x+1,y), (x,y-1), (x,y+1)]
-
+          getCandidates (x,y) =
+            let edges = getEdges (puzzle1 !! x !! y)
+            in [(x - 1, y) | North `elem` edges] ++
+               [(x + 1, y) | South `elem` edges] ++
+               [(x, y - 1) | West `elem` edges] ++
+               [(x, y + 1) | East `elem` edges]
 
 -- Challenge 2
 -- Solving Circuits
