@@ -125,7 +125,18 @@ data Bind = Discard | V Int
     deriving (Eq,Show,Read)
 
 prettyPrint :: LExpr -> String
-prettyPrint =  undefined
+prettyPrint (Var i) = "v" ++ show i
+prettyPrint (App e1 e2) = prettyPrint e1 ++ " " ++ prettyPrint e2
+prettyPrint (Let b e1 e2) = "let " ++ prettyBind b ++ " = " ++ prettyPrint e1 ++ " in " ++ prettyPrint e2
+prettyPrint (Pair e1 e2) = "(" ++ prettyPrint e1 ++ ", " ++ prettyPrint e2 ++ ")"
+prettyPrint (Fst e) = "fst " ++ prettyPrint e
+prettyPrint (Snd e) = "snd " ++ prettyPrint e
+prettyPrint (Abs b e) = "λ" ++ prettyBind b ++ ". " ++ prettyPrint e
+
+prettyBind :: Bind -> String
+prettyBind Discard = "_"
+prettyBind (V i) = "v" ++ show i
+
 
 
 -- Challenge 4 - Parsing Let Expressions
