@@ -13,7 +13,12 @@ module Challenges (TileEdge(..),Tile(..),Puzzle,isPuzzleComplete,
 
 -- Import standard library and parsing definitions from Hutton 2016, Chapter 13
 import Parsing
-import Data.List
+import Data.Char
+import Control.Applicative
+import Control.Monad
+import Data.Type.Equality (inner)
+import Data.Functor.Classes (eq1)
+import Foreign.C (e2BIG)
 
 -- Challenge 1
 -- Testing Circuits
@@ -72,7 +77,7 @@ sinksLinkedSources puzzle1
       sources = [(i, j) | i <- [0..length puzzle1 - 1], j <- [0..length (head puzzle1) - 1], isSource (puzzle1 !! i !! j)]
       sinks= [(i, j) | i <- [0..length puzzle1 - 1], j <- [0..length (head puzzle1) - 1], isSink (puzzle1 !! i !! j)]
 
-getEdges :: Tile -> [TileEdge]
+getEdges :: Tile -> [TileEdge]   
 getEdges (Source edges) = edges
 getEdges (Sink edges) = edges
 getEdges (Wire edges) = edges
@@ -111,10 +116,67 @@ hasPath puzzle1 coordsHead coordsTail = dfs coordsHead coordsTail []
 -- Challenge 2
 -- Solving Circuits
 data Rotation = R0 | R90 | R180 | R270 
-  deriving (Eq,Show,Read)
+ deriving (Eq,Show,Read)
 
-solveCircuit :: Puzzle -> Maybe [[ Rotation ]]
-solveCircuit = undefined
+solveCircuit :: Puzzle -> Maybe [[Rotation]]
+solveCircuit puzzle = undefined
+
+{-dfs puzzle initialCondition
+
+initialCondition :: Puzzle -> Condition
+initialCondition puzzle = (puzzle, [], initialRotations)
+  where
+    initialRotations = replicate (length puzzle) (replicate (length (head puzzle)) R0)
+
+dfs :: Puzzle -> Condition -> Maybe [[Rotation]]
+dfs puzzle condition
+    | isPuzzleComplete puzzle condition = Just (extractSolution condition)
+    | isDeadEnd condition = Nothing
+    | otherwise = explore puzzle condition
+
+explore :: Puzzle -> Condition -> Maybe [[Rotation]]
+type Condition = (Puzzle, [TileCoords], [[Rotation]])
+explore puzzle condition = foldr (\rot acc -> acc <|> dfs (applyRotation puzzle rot) (updateCondition condition rot)) Nothing rotations
+  where rotations = [R0, R90, R180, R270]
+
+isDeadEnd :: Puzzle -> Bool
+isDeadEnd puzzle = not $ areWiresConnected puzzle
+
+applyRotation :: Puzzle -> TileCoords -> Rotation -> Puzzle
+applyRotation puzzle (x, y) rotation =
+    let (rowBefore, targetRow:rowAfter) = splitAt x puzzle
+        (tilesBefore, targetTile:tilesAfter) = splitAt y targetRow
+        rotatedTile = rotateTile targetTile rotation
+    in rowBefore ++ [tilesBefore ++ [rotatedTile] ++ tilesAfter] ++ rowAfter
+
+rotateTile :: Tile -> Rotation -> Tile
+rotateTile tile R0 = tile
+rotateTile (Source edges) rotation = Source (rotateEdges edges rotation)
+rotateTile (Sink edges) rotation = Sink (rotateEdges edges rotation)
+rotateTile (Wire edges) rotation = Wire (rotateEdges edges rotation)
+
+rotateEdges :: [TileEdge] -> Rotation -> [TileEdge]
+rotateEdges edges rotation = map (rotateEdge rotation) edges
+
+rotateEdge :: Rotation -> TileEdge -> TileEdge
+rotateEdge R90 North = East
+rotateEdge R90 East = South
+rotateEdge R90 South = West
+rotateEdge R90 West = North
+rotateEdge R180 North = South
+rotateEdge R180 East = West
+rotateEdge R180 South = North
+rotateEdge R180 West = East
+rotateEdge R270 North = West
+rotateEdge R270 East = North
+rotateEdge R270 South = East
+rotateEdge R270 West = South
+rotateEdge _ edge = edge-}
+
+
+
+
+
 
 -- Challenge 3
 -- Pretty Printing Let Expressions
@@ -125,24 +187,146 @@ data Bind = Discard | V Int
     deriving (Eq,Show,Read)
 
 prettyPrint :: LExpr -> String
-prettyPrint (Var i) = "v" ++ show i
-prettyPrint (App e1 e2) = prettyPrint e1 ++ " " ++ prettyPrint e2
-prettyPrint (Let b e1 e2) = "let " ++ prettyBind b ++ " = " ++ prettyPrint e1 ++ " in " ++ prettyPrint e2
+
+prettyPrint (Var i) = "x" ++ show i
+prettyPrint (App e1 e2) = handleLeftApp e1 ++ " " ++ handleRightApp e2
+prettyPrint (Let b e1 e2) = "let " ++ prettyBind b ++ " " ++ handleAbs e1 ++ " in " ++ prettyPrint e2
+prettyPrint (Fst e) = "fst (" ++ prettyPrint e ++ ")"
+prettyPrint (Snd e) = "snd (" ++ prettyPrint e ++ ")"
+prettyPrint (Abs b e) = "\\" ++ prettyBind b ++ prettyPrintInner e
 prettyPrint (Pair e1 e2) = "(" ++ prettyPrint e1 ++ ", " ++ prettyPrint e2 ++ ")"
-prettyPrint (Fst e) = "fst " ++ prettyPrint e
-prettyPrint (Snd e) = "snd " ++ prettyPrint e
-prettyPrint (Abs b e) = "λ" ++ prettyBind b ++ ". " ++ prettyPrint e
 
 prettyBind :: Bind -> String
 prettyBind Discard = "_"
-prettyBind (V i) = "v" ++ show i
+prettyBind (V i) = "x" ++ show i
 
+handleAbs :: LExpr -> String
+handleAbs (Abs b e) = prettyBind b ++ " " ++ handleAbs e
+handleAbs (Let b e1 e2) = "= (" ++ prettyPrint (Let b e1 e2) ++ ")"
+handleAbs e = "= " ++ prettyPrint e
 
+prettyPrintInner :: LExpr -> String
+prettyPrintInner (Abs b inner) = case b of
+  Discard -> " _" ++ prettyPrintInner inner
+  V i     -> " " ++ prettyBind b ++ prettyPrintInner inner
+prettyPrintInner e = " -> " ++ prettyPrint e
+
+handleLeftApp :: LExpr -> String
+handleLeftApp (App e1 e2) = "(" ++ prettyPrint e1 ++ " in " ++ handleLeftApp e2
+handleLeftApp (Var n) = prettyPrint (Var n)
+handleLeftApp (Let b e1 e2) =
+  case b of
+    Discard -> "let _ = " ++ prettyPrint e1 ++ " in " ++ handleLeftApp e2
+    V n     -> "let " ++ prettyBind b ++ " = " ++ prettyPrint e1 ++ " in " ++ handleLeftApp e2
+handleLeftApp (Fst e) = prettyPrint (Fst e)
+handleLeftApp (Snd e) = prettyPrint (Snd e)
+handleLeftApp e = "(" ++ prettyPrint e ++ ")"
+
+handleRightApp :: LExpr -> String
+handleRightApp (App e1 e2) = "(" ++ prettyPrint e1 ++ " " ++ prettyPrint e2 ++ ")"
+handleRightApp e = prettyPrint e
 
 -- Challenge 4 - Parsing Let Expressions
 
 parseLetx :: String -> Maybe LExpr
-parseLetx = undefined
+parseLetx input = case parse parseLExpr input of
+    [(result, "")] -> Just result
+    _           -> Nothing
+
+parseLExpr :: Parser LExpr
+parseLExpr = parseLet <|> parseAbs <|> parseApp <|> parsePair <|> parseVar <|> parseFst <|> parseSnd
+
+parseBind :: Parser Bind
+parseBind = do
+  parseV <|> parseDiscard
+  where
+    parseV = do
+      symbol "x"
+      n <- natural
+      return (V n)
+
+    parseDiscard = do
+      symbol "_"
+      return (Discard)
+
+
+parseVar :: Parser LExpr
+parseVar = do
+  symbol "x"
+  n <- natural
+  return (Var n)
+
+parseAbs :: Parser LExpr
+parseAbs = do
+    symbol "\\"
+    b <- some parseBind
+    symbol "->"
+    e <- parseLExpr
+    return (foldr Abs e b)
+
+removeBrakets :: Parser LExpr
+removeBrakets = do
+  symbol "("
+  e <- parseLExpr
+  symbol ")"
+  return e
+
+parseApp :: Parser LExpr
+parseApp = do
+  es <- some (parseVar <|> removeBrakets)
+  return (foldl1 App es)
+
+parseBrackets :: Parser LExpr
+parseBrackets = do
+  symbol "("
+  e <- parseAbs
+  symbol ")"
+  return (e)
+
+parseLet :: Parser LExpr
+parseLet = do
+    symbol "let"
+    b <- parseBind
+    bs <- many parseBind
+    symbol "="
+    e1 <- parseLExpr
+    symbol "in"
+    e2 <- parseLExpr
+    return (Let b (foldrBE bs e1) e2)
+
+foldrBE :: [Bind] -> LExpr -> LExpr
+foldrBE [] e1 = e1
+foldrBE b e1 = foldr Abs e1 b
+
+parsePair :: Parser LExpr
+parsePair = do
+    symbol "("
+    e1 <- parseLExpr
+    symbol ","
+    e2 <- parseLExpr
+    symbol ")"
+    return $ Pair e1 e2
+
+parseFst :: Parser LExpr
+parseFst = do
+  symbol "fst"
+  symbol "("
+  e1 <- parseLExpr
+  symbol ","
+  e2 <- parseLExpr
+  symbol ")"
+  return (Fst e1)
+
+parseSnd :: Parser LExpr
+parseSnd = do
+  symbol "snd"
+  symbol "("
+  e1 <- parseLExpr
+  symbol ","
+  e2 <- parseLExpr
+  symbol ")"
+  return (Snd e1)
+
 
 -- Challenge 5
 -- Let Encoding in Lambda 
@@ -150,8 +334,30 @@ parseLetx = undefined
 data LamExpr = LamVar Int | LamApp LamExpr LamExpr | LamAbs Int LamExpr 
                 deriving (Eq, Show, Read)
 
-letEnc :: LExpr -> LamExpr 
-letEnc =  undefined
+letEnc :: LExpr -> LamExpr
+letEnc (Var n) = LamVar n
+letEnc (App e1 e2) = LamApp (letEnc e1) (letEnc e2)
+letEnc (Let Discard e1 e2) = let fresh = findNextUnused (extractFreeVars e2) in LamApp (LamAbs fresh (letEnc e2)) (letEnc e1)
+letEnc (Let (V n) e1 e2) = LamApp (LamAbs n (letEnc e2)) (letEnc e1)
+letEnc (Pair e1 e2) = let fresh = findNextUnused (extractFreeVars e1 ++ extractFreeVars e2) in LamAbs fresh (LamApp (LamApp (LamVar fresh)(letEnc e1)) (letEnc e2))
+letEnc (Abs Discard e) = let fresh = findNextUnused (extractFreeVars e) in LamAbs fresh (letEnc e)
+letEnc (Abs (V n) e) = LamAbs n (letEnc e)
+letEnc (Fst e) = LamApp (letEnc e) (LamAbs 0 (LamAbs 1 (LamVar 0)))
+letEnc (Snd e) = LamApp (letEnc e) (LamAbs 0 (LamAbs 1 (LamVar 1)))
+
+findNextUnused :: [Int] -> Int
+findNextUnused usedVars = head $ filter (`notElem` usedVars) [2..]
+
+extractFreeVars :: LExpr -> [Int]
+extractFreeVars (Var n) = [n]
+extractFreeVars (App e1 e2) = extractFreeVars e1 ++ extractFreeVars e2
+extractFreeVars (Let (V n) e1 e2) = n : (extractFreeVars e1 ++ extractFreeVars e2)
+extractFreeVars (Pair e1 e2) = extractFreeVars e1 ++ extractFreeVars e2
+extractFreeVars (Fst e) = extractFreeVars e
+extractFreeVars (Snd e) = extractFreeVars e
+extractFreeVars (Abs Discard e) = extractFreeVars e
+extractFreeVars (Abs (V n) e) = filter (/= n) (extractFreeVars e)
+
 
 -- Challenge 6
 -- Compare Innermost Reduction for Let_x and its Lambda Encoding
