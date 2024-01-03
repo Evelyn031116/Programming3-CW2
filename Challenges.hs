@@ -19,6 +19,7 @@ import Control.Monad
 import Data.Type.Equality (inner)
 import Data.Functor.Classes (eq1)
 import Foreign.C (e2BIG)
+import Language.Haskell.TH (reifyAnnotations)
 
 -- Challenge 1
 -- Testing Circuits
@@ -121,43 +122,6 @@ data Rotation = R0 | R90 | R180 | R270
 solveCircuit :: Puzzle -> Maybe [[Rotation]]
 solveCircuit puzzle = undefined
 
-{-dfs puzzle initialCondition
-
-initialCondition :: Puzzle -> Condition
-initialCondition puzzle = (puzzle, [], initialRotations)
-  where
-    initialRotations = replicate (length puzzle) (replicate (length (head puzzle)) R0)
-
-dfs :: Puzzle -> Condition -> Maybe [[Rotation]]
-dfs puzzle condition
-    | isPuzzleComplete puzzle condition = Just (extractSolution condition)
-    | isDeadEnd condition = Nothing
-    | otherwise = explore puzzle condition
-
-explore :: Puzzle -> Condition -> Maybe [[Rotation]]
-type Condition = (Puzzle, [TileCoords], [[Rotation]])
-explore puzzle condition = foldr (\rot acc -> acc <|> dfs (applyRotation puzzle rot) (updateCondition condition rot)) Nothing rotations
-  where rotations = [R0, R90, R180, R270]
-
-isDeadEnd :: Puzzle -> Bool
-isDeadEnd puzzle = not $ areWiresConnected puzzle
-
-applyRotation :: Puzzle -> TileCoords -> Rotation -> Puzzle
-applyRotation puzzle (x, y) rotation =
-    let (rowBefore, targetRow:rowAfter) = splitAt x puzzle
-        (tilesBefore, targetTile:tilesAfter) = splitAt y targetRow
-        rotatedTile = rotateTile targetTile rotation
-    in rowBefore ++ [tilesBefore ++ [rotatedTile] ++ tilesAfter] ++ rowAfter
-
-rotateTile :: Tile -> Rotation -> Tile
-rotateTile tile R0 = tile
-rotateTile (Source edges) rotation = Source (rotateEdges edges rotation)
-rotateTile (Sink edges) rotation = Sink (rotateEdges edges rotation)
-rotateTile (Wire edges) rotation = Wire (rotateEdges edges rotation)
-
-rotateEdges :: [TileEdge] -> Rotation -> [TileEdge]
-rotateEdges edges rotation = map (rotateEdge rotation) edges
-
 rotateEdge :: Rotation -> TileEdge -> TileEdge
 rotateEdge R90 North = East
 rotateEdge R90 East = South
@@ -171,9 +135,22 @@ rotateEdge R270 North = West
 rotateEdge R270 East = North
 rotateEdge R270 South = East
 rotateEdge R270 West = South
-rotateEdge _ edge = edge-}
+rotateEdge _ edge = edge
 
+transferToRotateTile :: Rotation -> Tile -> Tile
+transferToRotateTile R0 t = t
+transferToRotateTile R90 (Wire wires) = Wire (map (rotateEdge R90) wires)
+transferToRotateTile R90 (Source sources) = Source (map (rotateEdge R90) sources)
+transferToRotateTile R90 (Sink sinks) = Sink (map (rotateEdge R90) sinks)
+transferToRotateTile R180 (Wire wires) = Wire (map (rotateEdge R180) wires)
+transferToRotateTile R180 (Source sources) = Source (map (rotateEdge R180) sources)
+transferToRotateTile R180 (Sink sinks) = Sink (map (rotateEdge R180) sinks)
+transferToRotateTile R270 (Wire wires) = Wire (map (rotateEdge R270) wires)
+transferToRotateTile R270 (Source sources) = Source (map (rotateEdge R270) sources)
+transferToRotateTile R270 (Sink sinks) = Sink (map (rotateEdge R270) sinks)
 
+rotatePuzzle :: [[Rotation]] -> Puzzle -> Puzzle
+rotatePuzzle rotations previous = zipWith (zipWith (flip transferToRotateTile)) previous rotations
 
 
 
@@ -202,7 +179,7 @@ prettyBind (V i) = "x" ++ show i
 
 handleAbs :: LExpr -> String
 handleAbs (Abs b e) = prettyBind b ++ " " ++ handleAbs e
-handleAbs (Let b e1 e2) = "= (" ++ prettyPrint (Let b e1 e2) ++ ")"
+handleAbs (Let b e1 e2) = "= " ++ prettyPrint (Let b e1 e2)
 handleAbs e = "= " ++ prettyPrint e
 
 prettyPrintInner :: LExpr -> String
@@ -212,14 +189,15 @@ prettyPrintInner (Abs b inner) = case b of
 prettyPrintInner e = " -> " ++ prettyPrint e
 
 handleLeftApp :: LExpr -> String
-handleLeftApp (App e1 e2) = "(" ++ prettyPrint e1 ++ " in " ++ handleLeftApp e2
+handleLeftApp (App e1 e2) = prettyPrint e1 ++ " " ++ handleLeftApp e2
 handleLeftApp (Var n) = prettyPrint (Var n)
 handleLeftApp (Let b e1 e2) =
   case b of
-    Discard -> "let _ = " ++ prettyPrint e1 ++ " in " ++ handleLeftApp e2
-    V n     -> "let " ++ prettyBind b ++ " = " ++ prettyPrint e1 ++ " in " ++ handleLeftApp e2
+    Discard -> "(let _ = " ++ prettyPrint e1 ++ " in " ++ handleLeftApp e2 ++ ")"
+    V n     -> "(let " ++ prettyBind b ++ " = " ++ prettyPrint e1 ++ " in " ++ handleLeftApp e2 ++ ")"
 handleLeftApp (Fst e) = prettyPrint (Fst e)
 handleLeftApp (Snd e) = prettyPrint (Snd e)
+handleLeftApp (Pair e1 e2) = prettyPrint (Pair e1 e2)
 handleLeftApp e = "(" ++ prettyPrint e ++ ")"
 
 handleRightApp :: LExpr -> String
