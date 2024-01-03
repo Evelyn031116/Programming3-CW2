@@ -151,6 +151,23 @@ transferToRotateTile R270 (Sink sinks) = Sink (map (rotateEdge R270) sinks)
 
 rotatePuzzle :: [[Rotation]] -> Puzzle -> Puzzle
 rotatePuzzle rotations previous = zipWith (zipWith (flip transferToRotateTile)) previous rotations
+  where
+    partitionRotate :: [Tile] -> [Rotation] -> [Tile]
+    partitionRotate tiles rotations = zipWith transferToRotateTile rotations tiles
+
+cutBrunches :: Puzzle -> (Int, Int) -> [[Rotation]] -> Bool
+cutBrunches puzzle (i, j) rotations 
+  = isConnectedUpAndDown puzzle i j rotations 
+    && isConnectedLeftAndRight puzzle i j rotations 
+    && isNotConnectedToSides 
+    && (not (isEnd) || isPuzzleComplete (rotatePuzzle rotations puzzle))
+
+isConnectedUpAndDown :: Puzzle -> Int -> Int -> [[Rotation]] -> Bool
+isConnectedUpAndDown puzzle i j rotations
+  | x == 0 = true
+  | otherwise = North `elem` edges1 && South `elem` edges2 = true
+    where
+      Edges ::      
 
 
 
@@ -212,7 +229,7 @@ parseLetx input = case parse parseLExpr input of
     _           -> Nothing
 
 parseLExpr :: Parser LExpr
-parseLExpr = parseLet <|> parseAbs <|> parseApp <|> parsePair <|> parseVar <|> parseFst <|> parseSnd
+parseLExpr = parseLet <|> parseAbs <|> parseApp <|> parsePair <|> parseVar <|> parseFst <|> parseSnd <|> handleApp
 
 parseBind :: Parser Bind
 parseBind = do
@@ -251,8 +268,11 @@ removeBrakets = do
 
 parseApp :: Parser LExpr
 parseApp = do
-  es <- some (parseVar <|> removeBrakets)
+  es <- some handleApp
   return (foldl1 App es)
+
+handleApp :: Parser LExpr
+handleApp = removeBrakets <|> parseApp <|> parseVar <|> parseFst <|> parseSnd <|> parseLet <|> parseAbs
 
 parseBrackets :: Parser LExpr
 parseBrackets = do
