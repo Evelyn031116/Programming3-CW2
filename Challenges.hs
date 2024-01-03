@@ -20,6 +20,7 @@ import Data.Type.Equality (inner)
 import Data.Functor.Classes (eq1)
 import Foreign.C (e2BIG)
 import Language.Haskell.TH (reifyAnnotations)
+import GHC.Builtin.Types (trueDataCon)
 
 -- Challenge 1
 -- Testing Circuits
@@ -157,17 +158,29 @@ rotatePuzzle rotations previous = zipWith (zipWith (flip transferToRotateTile)) 
 
 cutBrunches :: Puzzle -> (Int, Int) -> [[Rotation]] -> Bool
 cutBrunches puzzle (i, j) rotations 
-  = isConnectedUpAndDown puzzle i j rotations 
-    && isConnectedLeftAndRight puzzle i j rotations 
-    && isNotConnectedToSides 
+  = isConnectedToNeighbours puzzle i j rotations
     && (not (isEnd) || isPuzzleComplete (rotatePuzzle rotations puzzle))
+      where
+        isEnd :: Bool
+        isEnd = undefined
 
-isConnectedUpAndDown :: Puzzle -> Int -> Int -> [[Rotation]] -> Bool
-isConnectedUpAndDown puzzle i j rotations
-  | x == 0 = true
-  | otherwise = North `elem` edges1 && South `elem` edges2 = true
-    where
-      Edges ::      
+isConnectedToNeighbours :: Puzzle -> Int -> Int -> [[Rotation]] -> Bool
+isConnectedToNeighbours puzzle i j rotations 
+  =  isConnectedUpAndDown    puzzle i j rotations 
+  && isConnectedLeftAndRight puzzle i j rotations
+  where
+    isConnectedUpAndDown :: Puzzle -> Int -> Int -> [[Rotation]] -> Bool
+    isConnectedUpAndDown puzzle i j rotations
+      | i == 0 = True
+      | otherwise = North `elem` rotateAndGetEdges && South `elem` rotateAndGetEdges || North `notElem` rotateAndGetEdges && South `notElem` rotateAndGetEdges
+
+    isConnectedLeftAndRight :: Puzzle -> Int -> Int -> [[Rotation]] -> Bool
+    isConnectedLeftAndRight puzzle i j rotations
+      | j == 0 = True
+      | otherwise = West `elem` rotateAndGetEdges && East `elem` rotateAndGetEdges || West `notElem` rotateAndGetEdges && East `notElem` rotateAndGetEdges
+
+    rotateAndGetEdges :: [TileEdge]
+    rotateAndGetEdges = getEdges $ transferToRotateTile (rotations !! i !! j) (puzzle !! i !! j)      
 
 
 
@@ -259,10 +272,10 @@ parseAbs = do
     e <- parseLExpr
     return (foldr Abs e b)
 
-removeBrakets :: Parser LExpr
-removeBrakets = do
+removeBrackets :: Parser LExpr -> Parser LExpr
+removeBrackets parser = do
   symbol "("
-  e <- parseLExpr
+  e <- parser
   symbol ")"
   return e
 
@@ -272,14 +285,7 @@ parseApp = do
   return (foldl1 App es)
 
 handleApp :: Parser LExpr
-handleApp = removeBrakets <|> parseApp <|> parseVar <|> parseFst <|> parseSnd <|> parseLet <|> parseAbs
-
-parseBrackets :: Parser LExpr
-parseBrackets = do
-  symbol "("
-  e <- parseAbs
-  symbol ")"
-  return (e)
+handleApp = removeBrackets parseLExpr <|> parseApp <|> parseVar <|> parseFst <|> parseSnd <|> parseLet <|> parseAbs
 
 parseLet :: Parser LExpr
 parseLet = do
