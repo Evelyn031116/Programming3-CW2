@@ -36,9 +36,16 @@ areWiresConnected puzzle = all (\coords -> all (isConnected coords) (getNeighbor
     getNeighborCoords :: TileCoords -> [TileCoords]
     getNeighborCoords (x, y) = filter isCoordValid [(x - 1, y), (x, y - 1), (x, y - 1), (x, y + 1)]
     isCoordValid :: TileCoords -> Bool
-    isCoordValid (x, y) = x >= 0 && x < length puzzle && y < length (head puzzle)
+    isCoordValid (x, y) = x >= 0 && y >= 0 && x < length puzzle && y < length (head puzzle)
     isConnected :: TileCoords -> TileCoords -> Bool
-    isConnected coord1 coord2 = connectedEdge coord1 coord2 (getEdges (puzzle !! fst coord1 !! snd coord1)) (getEdges (puzzle !! fst coord2 !! snd coord2)) && notConnectedTo coord1 && notConnectedTo coord2
+    isConnected coord1 coord2 
+      = connectedEdge 
+          coord1 
+          coord2 
+          (getEdges (puzzle !! fst coord1 !! snd coord1)) 
+          (getEdges (puzzle !! fst coord2 !! snd coord2)) 
+        && notConnectedTo coord1 
+        && notConnectedTo coord2
     connectedEdge :: TileCoords -> TileCoords -> [TileEdge] -> [TileEdge] -> Bool
     connectedEdge (x1, y1) (x2, y2) edges1 edges2
       | x1 < x2 && South `elem` edges1 && North `elem` edges2 = True
@@ -57,14 +64,15 @@ areWiresConnected puzzle = all (\coords -> all (isConnected coords) (getNeighbor
       | x == length puzzle - 1 && South `elem` getEdges (puzzle !! x !! y) = False
       | y == 0 && West `elem` getEdges (puzzle !! x !! y) = False
       | y == length (head puzzle) - 1 && East `elem` getEdges (puzzle !! x !! y) = False
+      | otherwise = True
 
 sourcesLinkedSinks :: Puzzle -> Bool
-sourcesLinkedSinks puzzle1
+sourcesLinkedSinks puzzle
  | null sources = False
- | otherwise = all (\sink -> any (\source -> hasPath puzzle1 sink source) sources) sinks
+ | otherwise = all (\sink -> any (\source -> hasPath puzzle sink source) sources) sinks
    where
-     sources = [(i, j) | i <- [0..length puzzle1 - 1], j <- [0..length (head puzzle1) - 1], isSource (puzzle1 !! i !! j)]
-     sinks= [(i, j) | i <- [0..length puzzle1 - 1], j <- [0..length (head puzzle1) - 1], isSink (puzzle1 !! i !! j)]
+     sources = [(i, j) | i <- [0..length puzzle - 1], j <- [0..length (head puzzle) - 1], isSource (puzzle !! i !! j)]
+     sinks= [(i, j) | i <- [0..length puzzle - 1], j <- [0..length (head puzzle) - 1], isSink (puzzle !! i !! j)]
 
 sinksLinkedSources :: Puzzle -> Bool
 sinksLinkedSources puzzle1
@@ -92,19 +100,19 @@ isSink (Sink _) = True
 isSink _ = False
 
 hasPath :: Puzzle -> TileCoords -> TileCoords -> Bool
-hasPath puzzle1 coordsHead coordsTail = dfs coordsHead coordsTail []
+hasPath puzzle coordsHead coordsTail = dfs coordsHead coordsTail []
   where
     dfs :: TileCoords -> TileCoords -> [TileCoords] -> Bool
     dfs currentCoord targetCoord visited
       | currentCoord == targetCoord = True
       | currentCoord `elem` visited = False
-      | otherwise = any (\candidate -> dfs candidate targetCoord (currentCoord : visited)) candidates
+      | otherwise = any (\candidate -> dfs candidate targetCoord (currentCoord : visited)) nextCoords
         where
-          candidates :: [TileCoords]
-          candidates = filter (`notElem` visited) (getCandidates currentCoord)
-          getCandidates :: TileCoords -> [TileCoords]
-          getCandidates (x,y) =
-            let edges = getEdges (puzzle1 !! x !! y)
+          nextCoords :: [TileCoords]
+          nextCoords = filter (`notElem` visited) (getNextCoords currentCoord)
+          getNextCoords :: TileCoords -> [TileCoords]
+          getNextCoords (x,y) =
+            let edges = getEdges (puzzle !! x !! y)
             in [(x - 1, y) | North `elem` edges] ++
                [(x + 1, y) | South `elem` edges] ++
                [(x, y - 1) | West `elem` edges] ++
@@ -175,23 +183,27 @@ isCorrectAnswer puzzle (i, j) rotations
           isConnectedUpAndDown :: Puzzle -> Int -> Int -> [[Rotation]] -> Bool
           isConnectedUpAndDown puzzle i j rotations
             | i == 0 = True
-            | otherwise =  North `elem` rotateAndGetEdges puzzle rotations (i, j)
-                        && South `elem` rotateAndGetEdges puzzle rotations (i, j) || North `notElem` rotateAndGetEdges puzzle rotations (i, j)
-                        && South `notElem` rotateAndGetEdges puzzle rotations (i, j)
+            | South `elem` rotateAndGetEdges puzzle rotations (i - 1, j)
+                        && North `elem` rotateAndGetEdges puzzle rotations (i, j) = True 
+            | South `notElem` rotateAndGetEdges puzzle rotations (i - 1, j)
+                        && North `notElem` rotateAndGetEdges puzzle rotations (i, j) = True
+            | otherwise = False
 
           isConnectedLeftAndRight :: Puzzle -> Int -> Int -> [[Rotation]] -> Bool
           isConnectedLeftAndRight puzzle i j rotations
             | j == 0 = True
-            | otherwise =  West `elem` rotateAndGetEdges puzzle rotations (i, j)
-                        && East `elem` rotateAndGetEdges puzzle rotations (i, j) || West `notElem` rotateAndGetEdges puzzle rotations (i, j)
-                        && East `notElem` rotateAndGetEdges puzzle rotations (i, j)
+            | East `elem` rotateAndGetEdges puzzle rotations (i, j - 1)
+                        && West `elem` rotateAndGetEdges puzzle rotations (i, j) = True
+            | East `notElem` rotateAndGetEdges puzzle rotations (i, j - 1)
+                        && West `notElem` rotateAndGetEdges puzzle rotations (i, j) = True
+            | otherwise = False
 
 rotateAndGetEdges :: Puzzle -> [[Rotation]] -> (Int, Int) -> [TileEdge]
 rotateAndGetEdges puzzle rotations (i, j) = getEdges $ transferToRotateTile (rotations !! i !! j) (puzzle !! i !! j)
 
 backtrack :: Puzzle -> (Int, Int) -> [[Rotation]] -> [((Int, Int), Rotation)] -> Maybe [[Rotation]]
 backtrack puzzle (i, j) rotations nextList
-  | isEnd (i, j) puzzle = if isPuzzleComplete (rotatePuzzle rotations puzzle) then Just rotations else Nothing
+  | isEnd (i, j) puzzle && isPuzzleComplete (rotatePuzzle rotations puzzle) = Just rotations
   | isCorrectAnswer puzzle (i, j) (addCorrectAnswer (i, j) rotations R0) =
       backtrack puzzle (nextTile (i, j) puzzle) (addCorrectAnswer (i, j) rotations R0) (((i, j), R90) : nextList)
   | isCorrectAnswer puzzle (i, j) (addCorrectAnswer (i, j) rotations R90) =
@@ -231,8 +243,16 @@ backtrack puzzle (i, j) rotations nextList
 
     isEnd :: (Int, Int) -> Puzzle -> Bool
     isEnd (i, j) puzzle
-        | i == length puzzle && j == length (head puzzle) = True
+        | i == length puzzle - 1 && j == length (head puzzle)-1  = True
         | otherwise = False
+
+addCorrectAnswer :: (Int, Int) -> [[Rotation]] -> Rotation -> [[Rotation]]
+addCorrectAnswer (i, j) rotations newRotation =
+    take i rotations ++ [updateRow (rotations !! i) j newRotation] ++ drop (i + 1) rotations
+    where
+        updateRow :: [Rotation] -> Int -> Rotation -> [Rotation]
+        updateRow row j newRotation =
+            take j row ++ [newRotation] ++ drop (j + 1) row
 
 -- Challenge 3
 -- Pretty Printing Let Expressions
@@ -442,15 +462,15 @@ free x (LamAbs y e) | x /= y = free x e
 free x (LamApp e1 e2)  = (free x e1) || (free x e2)
 
 rename :: Int -> LamExpr -> Int
-rename x e | free (x+1) e = rename (x+1) e
-           | otherwise = x+1
+rename x e | free (x + 1) e = rename (x + 1) e
+           | otherwise = x + 1
 
 subst :: LamExpr -> Int ->  LamExpr -> LamExpr
 subst (LamVar x) y e | x == y = e
 subst (LamVar x) y e | x /= y = LamVar x
 subst (LamAbs x e1) y e  |  x /= y && not (free x e)  = LamAbs x (subst e1 y e)
 subst (LamAbs x e1) y e  |  x /= y &&     (free x e)  = let x' = (rename x e1) in subst (LamAbs x' (subst e1 x (LamVar x'))) y e
-subst (LamAbs x e1) y e  | x == y  = LamAbs x e1
+subst (LamAbs x e1) y e  |  x == y  = LamAbs x e1
 subst (LamApp e1 e2) y e = LamApp (subst e1 y e) (subst e2 y e)
 
 isLamValue :: LamExpr -> Bool
@@ -500,3 +520,9 @@ compareRedn expr limit =
       cbvSteps = countReductions cbvlam1 lamExpr limit
       cbnSteps = countReductions cbnlam1 lamExpr limit
   in (cbvSteps, cbnSteps, cbvSteps, cbnSteps)
+
+le::Puzzle
+le=[[ Wire [West, South], Wire [West, East], Source [South] ], [ Wire [South,East], Wire[North,South], Wire [East,North] ], [ Sink [East] , Wire [North,South] , Wire [North,West] ] ]
+le1::Puzzle
+le1=[ [ Wire [East, South], Wire [West, East], Source [West] ], [ Wire [North,East], Wire [East,West], Wire [West,South] ], [ Sink [East] , Wire [West,East] , Wire [North,West] ] ]
+
