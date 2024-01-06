@@ -6,7 +6,7 @@ testChallenge1 :: Test
 testChallenge1 = TestList [
         TestCase (
             assertEqual "Challenge 1: Test case #1: The given S puzzle in coursework spec is complete"
-                (isPuzzleComplete [[ Wire [East, South], Wire [West, East], Source [West] ], [ Wire [North,East], Wire [East,West], Wire [West,South] ], [ Sink [East] , Wire [West,East] , Wire [North,West] ] ])
+                (isPuzzleComplete [ [ Wire [East, South], Wire [West, East], Source [West] ], [ Wire [North,East], Wire [East,West], Wire [West,South] ], [ Sink [East] , Wire [West,East] , Wire [North,West] ] ])
                 True
         ),
         TestCase (

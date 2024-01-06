@@ -115,8 +115,8 @@ hasPath puzzle1 coordsHead coordsTail = dfs coordsHead coordsTail []
 data Rotation = R0 | R90 | R180 | R270
  deriving (Eq,Show,Read)
 
-solveCircuit :: Puzzle -> [((Int, Int), Rotation)] -> Maybe [[Rotation]]
-solveCircuit puzzle = backtrack puzzle (0, 0) (initialRotations puzzle)
+solveCircuit :: Puzzle -> Maybe [[Rotation]]
+solveCircuit puzzle = backtrack puzzle (0, 0) (initialRotations puzzle) []
 
 initialRotations :: Puzzle -> [[Rotation]]
 initialRotations puzzle = replicate (length puzzle) (replicate (length (head puzzle)) R0)
@@ -189,7 +189,6 @@ isCorrectAnswer puzzle (i, j) rotations
 rotateAndGetEdges :: Puzzle -> [[Rotation]] -> (Int, Int) -> [TileEdge]
 rotateAndGetEdges puzzle rotations (i, j) = getEdges $ transferToRotateTile (rotations !! i !! j) (puzzle !! i !! j)
 
--- 
 backtrack :: Puzzle -> (Int, Int) -> [[Rotation]] -> [((Int, Int), Rotation)] -> Maybe [[Rotation]]
 backtrack puzzle (i, j) rotations nextList
   | isEnd (i, j) puzzle = if isPuzzleComplete (rotatePuzzle rotations puzzle) then Just rotations else Nothing
@@ -487,8 +486,17 @@ cbnlam1 _ = Nothing
 ---------
 -- LET --
 --------- 
+countReductions :: (LamExpr -> Maybe LamExpr) -> LamExpr -> Int -> Int
+countReductions reduce expr limit = go 0 expr
+  where
+    go n e | n >= limit = limit
+           | otherwise = case reduce e of
+                           Just e' -> go (n + 1) e'
+                           Nothing -> n
 
-
-
-compareRedn :: LExpr -> Int -> (Int,Int,Int,Int)
-compareRedn = undefined
+compareRedn :: LExpr -> Int -> (Int, Int, Int, Int)
+compareRedn expr limit =
+  let lamExpr = letEnc expr
+      cbvSteps = countReductions cbvlam1 lamExpr limit
+      cbnSteps = countReductions cbnlam1 lamExpr limit
+  in (cbvSteps, cbnSteps, cbvSteps, cbnSteps)
