@@ -1,4 +1,5 @@
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE ParallelListComp #-}
 -- comp2209 Functional Programming Challenges
 -- (c) University of Southampton 2021
 -- Skeleton code to be updated with your solutions
@@ -38,13 +39,13 @@ areWiresConnected puzzle = all (\coords -> all (isConnected coords) (getNeighbor
     isCoordValid :: TileCoords -> Bool
     isCoordValid (x, y) = x >= 0 && y >= 0 && x < length puzzle && y < length (head puzzle)
     isConnected :: TileCoords -> TileCoords -> Bool
-    isConnected coord1 coord2 
-      = connectedEdge 
-          coord1 
-          coord2 
-          (getEdges (puzzle !! fst coord1 !! snd coord1)) 
-          (getEdges (puzzle !! fst coord2 !! snd coord2)) 
-        && notConnectedTo coord1 
+    isConnected coord1 coord2
+      = connectedEdge
+          coord1
+          coord2
+          (getEdges (puzzle !! fst coord1 !! snd coord1))
+          (getEdges (puzzle !! fst coord2 !! snd coord2))
+        && notConnectedTo coord1
         && notConnectedTo coord2
     connectedEdge :: TileCoords -> TileCoords -> [TileEdge] -> [TileEdge] -> Bool
     connectedEdge (x1, y1) (x2, y2) edges1 edges2
@@ -111,9 +112,15 @@ hasPath puzzle coordsHead coordsTail = dfs coordsHead coordsTail []
           nextCoords :: [TileCoords]
           nextCoords = filter (`notElem` visited) (getNextCoords currentCoord)
           getNextCoords :: TileCoords -> [TileCoords]
-          getNextCoords (x,y) =
-            let edges = getEdges (puzzle !! x !! y)
-            in [(x - 1, y) | North `elem` edges] ++
+          getNextCoords (x, y) =
+              let maxX = length puzzle - 1
+                  maxY = length (head puzzle) - 1
+                  validCoord (a, b) = a >= 0 && a <= maxX && b >= 0 && b <= maxY
+                  edges = if x >= 0 && x <= maxX && y >= 0 && y <= maxY
+                          then getEdges (puzzle !! x !! y)
+                          else []
+              in filter validCoord
+               [(x - 1, y) | North `elem` edges] ++
                [(x + 1, y) | South `elem` edges] ++
                [(x, y - 1) | West `elem` edges] ++
                [(x, y + 1) | East `elem` edges]
@@ -184,7 +191,7 @@ isCorrectAnswer puzzle (i, j) rotations
           isConnectedUpAndDown puzzle i j rotations
             | i == 0 = True
             | South `elem` rotateAndGetEdges puzzle rotations (i - 1, j)
-                        && North `elem` rotateAndGetEdges puzzle rotations (i, j) = True 
+                        && North `elem` rotateAndGetEdges puzzle rotations (i, j) = True
             | South `notElem` rotateAndGetEdges puzzle rotations (i - 1, j)
                         && North `notElem` rotateAndGetEdges puzzle rotations (i, j) = True
             | otherwise = False
@@ -246,14 +253,6 @@ backtrack puzzle (i, j) rotations nextList
         | i == length puzzle - 1 && j == length (head puzzle)-1  = True
         | otherwise = False
 
-addCorrectAnswer :: (Int, Int) -> [[Rotation]] -> Rotation -> [[Rotation]]
-addCorrectAnswer (i, j) rotations newRotation =
-    take i rotations ++ [updateRow (rotations !! i) j newRotation] ++ drop (i + 1) rotations
-    where
-        updateRow :: [Rotation] -> Int -> Rotation -> [Rotation]
-        updateRow row j newRotation =
-            take j row ++ [newRotation] ++ drop (j + 1) row
-
 -- Challenge 3
 -- Pretty Printing Let Expressions
 
@@ -266,11 +265,25 @@ prettyPrint :: LExpr -> String
 
 prettyPrint (Var i) = "x" ++ show i
 prettyPrint (App e1 e2) = handleLeftApp e1 ++ " " ++ handleRightApp e2
-prettyPrint (Let b e1 e2) = "let " ++ prettyBind b ++ " " ++ handleAbs e1 ++ " in " ++ prettyPrint e2
+prettyPrint (Let b e1 e2) = "let " ++ handleLetBindings b e1 ++ "in " ++ prettyPrint e2
+  where
+    handleLetBindings :: Bind -> LExpr -> String
+    handleLetBindings bind (Abs b1 e1') = prettyBind bind ++ " " ++ handleLetBindings b1 e1'
+    handleLetBindings bind e1' = prettyBind bind ++ " = " ++ prettyPrint e1' ++ " "
+
 prettyPrint (Fst e) = "fst (" ++ prettyPrint e ++ ")"
 prettyPrint (Snd e) = "snd (" ++ prettyPrint e ++ ")"
-prettyPrint (Abs b e) = "\\" ++ prettyBind b ++ prettyPrintInner e
+prettyPrint (Abs b e) = "\\" ++ handleAbsBindings b e
+  where
+    handleAbsBindings :: Bind -> LExpr -> String
+    handleAbsBindings bind (Abs b1 e1') = prettyBind bind ++ " " ++ handleAbsBindings b1 e1'
+    handleAbsBindings bind e1' = prettyBind bind ++ " -> " ++ prettyPrint e1'
 prettyPrint (Pair e1 e2) = "(" ++ prettyPrint e1 ++ ", " ++ prettyPrint e2 ++ ")"
+
+--(App (Let (V 1) (Abs (V 2) (Abs Discard (Var 9))) (Var 10)) (App (Abs (V 1) (Var 1)) (Abs (V 1) (Var 1))))
+handleLetBindings :: Bind -> LExpr -> String
+handleLetBindings bind (Abs b1 e1') = prettyBind bind ++ " " ++ handleLetBindings b1 e1'
+handleLetBindings bind e1' = prettyBind bind ++ " = " ++ prettyPrint e1' ++ " "
 
 prettyBind :: Bind -> String
 prettyBind Discard = "_"
@@ -288,19 +301,19 @@ prettyPrintInner (Abs b inner) = case b of
 prettyPrintInner e = " -> " ++ prettyPrint e
 
 handleLeftApp :: LExpr -> String
-handleLeftApp (App e1 e2) = prettyPrint e1 ++ " " ++ handleLeftApp e2
+handleLeftApp (App e1 e2) = handleLeftApp e1 ++ " " ++ handleLeftApp e2
 handleLeftApp (Var n) = prettyPrint (Var n)
-handleLeftApp (Let b e1 e2) =
-  case b of
-    Discard -> "(let _ = " ++ prettyPrint e1 ++ " in " ++ handleLeftApp e2 ++ ")"
-    V n     -> "(let " ++ prettyBind b ++ " = " ++ prettyPrint e1 ++ " in " ++ handleLeftApp e2 ++ ")"
+handleLeftApp (Let b e1 e2) = "(let " ++ handleLetBindings b e1 ++ "in " ++ handleLeftApp e2 ++ ")"
+  where
+    handleLetBindings bind (Abs b1 e1') = prettyBind bind ++ " " ++ handleLetBindings b1 e1'
+    handleLetBindings bind e1' = prettyBind bind ++ " = " ++ prettyPrint e1' ++ " "
 handleLeftApp (Fst e) = prettyPrint (Fst e)
 handleLeftApp (Snd e) = prettyPrint (Snd e)
 handleLeftApp (Pair e1 e2) = prettyPrint (Pair e1 e2)
 handleLeftApp e = "(" ++ prettyPrint e ++ ")"
 
 handleRightApp :: LExpr -> String
-handleRightApp (App e1 e2) = "(" ++ prettyPrint e1 ++ " " ++ prettyPrint e2 ++ ")"
+handleRightApp (App e1 e2) = "(" ++ handleLeftApp e1 ++ " " ++ handleRightApp e2 ++ ")"
 handleRightApp e = prettyPrint e
 
 -- Challenge 4 - Parsing Let Expressions
@@ -506,6 +519,75 @@ cbnlam1 _ = Nothing
 ---------
 -- LET --
 --------- 
+substLExpr :: LExpr -> Int -> LExpr -> LExpr
+substLExpr (Var x) y e | x == y = e
+substLExpr (Var x) y e | x /= y = Var x
+substLExpr (App e1 e2) y e = App (substLExpr e1 y e) (substLExpr e2 y e)
+substLExpr (Abs bind e1) y e = Abs bind (substLExpr e1 y e) 
+substLExpr (Let bind e1 e2) y e = Let bind (substLExpr e1 y e) (substLExpr e2 y e)
+substLExpr (Pair e1 e2) y e = Pair (substLExpr e1 y e) (substLExpr e2 y e)
+substLExpr (Fst e1) y e = Fst (substLExpr e1 y e)
+substLExpr (Snd e1) y e = Snd (substLExpr e1 y e)
+
+isLExprValue :: LExpr -> Bool
+isLExprValue (Var _) = True      -- A variable is a value
+isLExprValue (Abs _ _) = True    -- An abstraction is a value
+isLExprValue _ = False           -- Other expressions are not values
+
+cbvLet :: LExpr -> Maybe LExpr
+cbvLet expr@(Var _) = Just expr
+cbvLet expr@(Abs _ _) = Just expr
+cbvLet (App e1 e2)
+    | not (isLExprValue e1) = cbvLet e1 >>= \e1' -> return (App e1' e2)
+    | not (isLExprValue e2) = cbvLet e2 >>= \e2' -> return (App e1 e2')
+    | otherwise = apply e1 e2
+      where
+        apply :: LExpr -> LExpr -> Maybe LExpr
+        apply (Abs (V x) e1) e2 = Just (substLExpr e1 x e2)
+        apply _ _ = Nothing
+
+cbvLet (Let (V n) e1 e2)
+    | not (isLExprValue e1) = cbvLet e1 >>= \e1' -> return (Let (V n) e1' e2)
+    | otherwise = let lamE2 = letEnc e2 in return (lamEnc (subst lamE2 n (letEnc e1)))
+
+cbvLet (Pair e1 e2)
+    | not (isLExprValue e1) = cbvLet e1 >>= \e1' -> return (Pair e1' e2)
+    | not (isLExprValue e2) = cbvLet e2 >>= \e2' -> return (Pair e1 e2')
+    | otherwise = Just (Pair e1 e2)
+
+cbvLet (Fst e)
+    | not (isLExprValue e) = cbvLet e >>= \e' -> return (Fst e')
+    | otherwise = case e of
+        Pair e1 _ -> Just e1
+        _ -> Nothing
+
+cbvLet (Snd e)
+    | not (isLExprValue e) = cbvLet e >>= \e' -> return (Snd e')
+    | otherwise = case e of
+        Pair _ e2 -> Just e2
+        _ -> Nothing
+
+lamEnc :: LamExpr -> LExpr
+lamEnc (LamVar n) = Var n
+lamEnc (LamApp e1 e2) = App (lamEnc e1) (lamEnc e2)
+lamEnc (LamAbs n e) = Abs (V n) (lamEnc e)
+
+cbnLet :: LExpr -> Maybe LExpr
+cbnLet expr@(Var _) = Just expr
+cbnLet expr@(Abs _ _) = Just expr
+cbnLet (App e1 e2) = case cbnLet e1 of
+    Just (Abs (V x) e1') -> Just (substLExpr e1' x e2)
+    Just e1' -> Just (App e1' e2)
+    Nothing -> Nothing
+cbnLet (Let (V n) e1 e2) = Just (substLExpr e2 n e1)
+cbnLet (Pair e1 e2) = Just (Pair e1 e2)  -- In call-by-name, we don't reduce the components of a pair
+cbnLet (Fst e) = case cbnLet e of
+    Just (Pair e1 _) -> Just e1
+    _ -> Nothing
+cbnLet (Snd e) = case cbnLet e of
+    Just (Pair _ e2) -> Just e2
+    _ -> Nothing
+
 countReductions :: (LamExpr -> Maybe LamExpr) -> LamExpr -> Int -> Int
 countReductions reduce expr limit = go 0 expr
   where
@@ -521,8 +603,17 @@ compareRedn expr limit =
       cbnSteps = countReductions cbnlam1 lamExpr limit
   in (cbvSteps, cbnSteps, cbvSteps, cbnSteps)
 
+
+
+
+
+
+
+
+
 le::Puzzle
-le=[[ Wire [West, South], Wire [West, East], Source [South] ], [ Wire [South,East], Wire[North,South], Wire [East,North] ], [ Sink [East] , Wire [North,South] , Wire [North,West] ] ]
+le=[[ Wire [West, South], Wire [West, East], Source [South] ], [ Wire [South,East], Wire [North,South], Wire [East,North] ], [ Sink [East] , Wire [North,South] , Wire [North,West] ] ]
 le1::Puzzle
 le1=[ [ Wire [East, South], Wire [West, East], Source [West] ], [ Wire [North,East], Wire [East,West], Wire [West,South] ], [ Sink [East] , Wire [West,East] , Wire [North,West] ] ]
-
+le2::Puzzle
+le2=[[Source [South, West], Source [North, South, West], Source [North, South, West], Source [North, South, West], Source [North, South, West], Sink [North, South, West], Sink [North, South, West], Sink [North, South, West], Sink [North, South, West], Sink [North, West]], [Source [East, South, West], Source [North, East, South], Source [North, East, South], Source [North, East, South], Source [North, East, South], Sink [North, East, South], Sink [North, East, South], Sink [North, East, South], Sink [North, East, South], Sink [North, East, West]], [Source [East, South, West], Source [North, South, West], Source [North, South, West], Source [North, South, West], Source [North, South, West], Sink [North, South, West], Sink [North, South, West], Sink [North, South, West], Sink [North, South, West], Sink [North, East, West]], [Source [East, South, West], Source [North, East, South], Source [North, East, South], Source [North, East, South], Source [North, East, South], Sink [North, East, South], Sink [North, East, South], Sink [North, East, South], Sink [North, East, South], Sink [North, East, West]], [Source [East, South, West], Source [North, South, West], Source [North, South, West], Source [North, South, West], Source [North, South, West], Sink [North, South, West], Sink [North, South, West], Sink [North, South, West], Sink [North, South, West], Sink [North, East, West]], [Source [East, South, West], Source [North, East, South], Source [North, East, South], Source [North, East, South], Source [North, East, South], Sink [North, East, South], Sink [North, East, South], Sink [North, East, South], Sink [North, East, South], Sink [North, East, West]], [Source [East, South, West], Source [North, South, West], Source [North, South, West], Source [North, South, West], Source [North, South, West], Sink [North, South, West], Sink [North, South, West], Sink [North, South, West], Sink [North, South, West], Sink [North, East, West]], [Source [East, South, West], Source [North, East, South], Source [North, East, South], Source [North, East, South], Source [North, East, South], Sink [North, East, South], Sink [North, East, South], Sink [North, East, South], Sink [North, East, South], Sink [North, East, West]], [Source [East, South, West], Source [North, South, West], Source [North, South, West], Source [North, South, West], Source [North, South, West], Sink [North, South, West], Sink [North, South, West], Sink [North, South, West], Sink [North, South, West], Sink [North, East, West]], [Source [East, South], Source [North, East, South], Source [North, East, South], Source [North, East, South], Source [North, East, South], Sink [North, East, South], Sink [North, East, South], Sink [North, East, South], Sink [North, East, South], Sink [North, East]]]
