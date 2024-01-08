@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE ParallelListComp #-}
+{-# OPTIONS_GHC -Wno-overlapping-patterns #-}
 -- comp2209 Functional Programming Challenges
 -- (c) University of Southampton 2021
 -- Skeleton code to be updated with your solutions
@@ -17,6 +18,7 @@ import Parsing
 import Data.Char
 import Control.Applicative
 import Control.Monad
+import GHC.CmmToAsm.AArch64.Instr (x0)
 
 -- Challenge 1
 -- Testing Circuits
@@ -529,6 +531,8 @@ substLExpr (Pair e1 e2) y e = Pair (substLExpr e1 y e) (substLExpr e2 y e)
 substLExpr (Fst e1) y e = Fst (substLExpr e1 y e)
 substLExpr (Snd e1) y e = Snd (substLExpr e1 y e)
 
+
+
 isLExprValue :: LExpr -> Bool
 isLExprValue (Var _) = True      -- A variable is a value
 isLExprValue (Abs _ _) = True    -- An abstraction is a value
@@ -549,7 +553,8 @@ cbvLet (Let bind e1 e2)
     | bind == Discard && isLExprValue e2 = Just e2
     | not (isLExprValue e1) = cbvLet e1 >>= \e1' -> return (Let bind e1' e2)
     | not (isLExprValue e2) = cbvLet e2 >>= \e2' -> return (Let bind e1 e2')
-    | otherwise = let lamE2 = letEnc e2 in return (lamEnc (subst lamE2 (bindToInt bind) (letEnc e1)))
+    -- not Discard but is value
+    | otherwise = cbvLet e1 >>= \e1' -> return (Let bind e1' e2)
       where
         bindToInt :: Bind -> Int
         bindToInt (V n) = n
@@ -574,19 +579,16 @@ lamEnc (LamApp e1 e2) = App (lamEnc e1) (lamEnc e2)
 lamEnc (LamAbs n e) = Abs (V n) (lamEnc e)
 
 cbnLet :: LExpr -> Maybe LExpr
-cbnLet (App e1 e2) = case cbnLet e1 of
-    Just (Abs (V x) e1') -> Just (substLExpr e1' x e2)
-    Just e1' -> Just (App e1' e2)
-    Nothing -> Nothing
+cbnLet (App (Abs Discard e1) e2) = Just e1
+cbnLet (App (Abs b e1) e2) = Just (substLExpr e1 (bindToInt b) e2)
+  where 
+     bindToInt :: Bind -> Int
+     bindToInt (V n) = n
 cbnLet (Let (V n) e1 e2) = Just (substLExpr e2 n e1)
 cbnLet (Let Discard e1 e2) = Just e2
-cbnLet (Pair e1 e2) = Just (Pair e1 e2)  -- In call-by-name, we don't reduce the components of a pair
-cbnLet (Fst e) = case cbnLet e of
-    Just (Pair e1 _) -> Just e1
-    _ -> Nothing
-cbnLet (Snd e) = case cbnLet e of
-    Just (Pair _ e2) -> Just e2
-    _ -> Nothing
+cbnLet (Pair e1 e2) = Just e1  -- In call-by-name, we don't reduce the components of a pair
+cbnLet (Fst (Pair e1 e2)) = Just e1
+cbnLet (Snd (Pair e1 e2)) = Just e2
 cbnLet _ = Nothing
 
 countLamReductions :: (LamExpr -> Maybe LamExpr) -> LamExpr -> Int -> Int
@@ -619,13 +621,14 @@ compareRedn expr limit =
 
 
 
-
-
-ex::LExpr
-ex=(Let Discard (App (Abs (V 1) (Var 1)) (App (Abs (V 1) (Var 1)) (Abs (V 1) (Var 1)))) (Snd (Pair (App (Abs (V 1) (Var 1)) (Abs (V 1) (Var 1))) (Abs (V 1) (Var 1)))))
-
 ex1 :: LExpr
-ex1=(Let (V 3) (Pair (App (Abs (V 1) (App (Var 1) (Var 1))) (Abs (V 2) (Var 2))) (App (Abs (V 1) (App (Var 1) (Var 1))) (Abs (V 2) (Var 2)))) (Fst (Var 3)))
+ex1 = (Let (V 3) (Pair (App (Abs (V 1) (App (Var 1) (Var 1))) (Abs (V 2) (Var 2))) (App (Abs (V 1) (App (Var 1) (Var 1))) (Abs (V 2) (Var 2)))) (Fst (Var 3)))
+
+ex2 :: LExpr
+ex2 = (Let Discard (App (Abs (V 1) (Var 1)) (App (Abs (V 1) (Var 1)) (Abs (V 1) (Var 1)))) (Snd (Pair (App (Abs (V 1) (Var 1)) (Abs (V 1) (Var 1))) (Abs (V 1) (Var 1)))))
+
+ex3 :: LExpr
+ex3 =  (Let (V 2) (Let (V 1) (Abs (V 0) (App (Var 0) (Var 0))) (App (Var 1) (Var 1))) (Snd (Pair (Var 2) (Abs (V 1) (Var 1)))))
 
 
 le::Puzzle
@@ -634,3 +637,18 @@ le1::Puzzle
 le1=[ [ Wire [East, South], Wire [West, East], Source [West] ], [ Wire [North,East], Wire [East,West], Wire [West,South] ], [ Sink [East] , Wire [West,East] , Wire [North,West] ] ]
 le2::Puzzle
 le2=[[Source [South, West], Source [North, South, West], Source [North, South, West], Source [North, South, West], Source [North, South, West], Sink [North, South, West], Sink [North, South, West], Sink [North, South, West], Sink [North, South, West], Sink [North, West]], [Source [East, South, West], Source [North, East, South], Source [North, East, South], Source [North, East, South], Source [North, East, South], Sink [North, East, South], Sink [North, East, South], Sink [North, East, South], Sink [North, East, South], Sink [North, East, West]], [Source [East, South, West], Source [North, South, West], Source [North, South, West], Source [North, South, West], Source [North, South, West], Sink [North, South, West], Sink [North, South, West], Sink [North, South, West], Sink [North, South, West], Sink [North, East, West]], [Source [East, South, West], Source [North, East, South], Source [North, East, South], Source [North, East, South], Source [North, East, South], Sink [North, East, South], Sink [North, East, South], Sink [North, East, South], Sink [North, East, South], Sink [North, East, West]], [Source [East, South, West], Source [North, South, West], Source [North, South, West], Source [North, South, West], Source [North, South, West], Sink [North, South, West], Sink [North, South, West], Sink [North, South, West], Sink [North, South, West], Sink [North, East, West]], [Source [East, South, West], Source [North, East, South], Source [North, East, South], Source [North, East, South], Source [North, East, South], Sink [North, East, South], Sink [North, East, South], Sink [North, East, South], Sink [North, East, South], Sink [North, East, West]], [Source [East, South, West], Source [North, South, West], Source [North, South, West], Source [North, South, West], Source [North, South, West], Sink [North, South, West], Sink [North, South, West], Sink [North, South, West], Sink [North, South, West], Sink [North, East, West]], [Source [East, South, West], Source [North, East, South], Source [North, East, South], Source [North, East, South], Source [North, East, South], Sink [North, East, South], Sink [North, East, South], Sink [North, East, South], Sink [North, East, South], Sink [North, East, West]], [Source [East, South, West], Source [North, South, West], Source [North, South, West], Source [North, South, West], Source [North, South, West], Sink [North, South, West], Sink [North, South, West], Sink [North, South, West], Sink [North, South, West], Sink [North, East, West]], [Source [East, South], Source [North, East, South], Source [North, East, South], Source [North, East, South], Source [North, East, South], Sink [North, East, South], Sink [North, East, South], Sink [North, East, South], Sink [North, East, South], Sink [North, East]]]
+
+{-Just (Let (V 3) (Pair (App (Abs (V 2) (Var 2)) (Abs (V 2) (Var 2))) (App (Abs (V 1) (App (Var 1) (Var 1))) (Abs (V 2) (Var 2)))) (Fst (Var 3)))
+Just (Let (V 3) (Pair (App (Abs (V 2) (Var 2)) (Abs (V 2) (Var 2))) (App (Abs (V 1) (App (Var 1) (Var 1))) (Abs (V 2) (Var 2)))) (Fst (Var 3)))
+
+Just (Let (V 3) (Pair (Abs (V 2) (Var 2)) (App (Abs (V 1) (App (Var 1) (Var 1))) (Abs (V 2) (Var 2)))) (Fst (Var 3)))
+Just (Let (V 3) (Pair (Abs (V 2) (Var 2)) (App (Abs (V 1) (App (Var 1) (Var 1))) (Abs (V 2) (Var 2)))) (Fst (Var 3)))
+
+Just (Let (V 3) (Pair (Abs (V 2) (Var 2)) (App (Abs (V 2) (Var 2)) (Abs (V 2) (Var 2)))) (Fst (Var 3)))
+Just (Let (V 3) (Pair (Abs (V 2) (Var 2)) (App (Abs (V 2) (Var 2)) (Abs (V 2) (Var 2)))) (Fst (Var 3)))
+
+Just (Let (V 3) (Pair (Abs (V 2) (Var 2)) (Abs (V 2) (Var 2))) (Fst (Var 3)))
+Just (Let (V 3) (Pair (Abs (V 2) (Var 2)) (Abs (V 2) (Var 2))) (Fst (Var 3)))
+
+Just (Let (V 3) (Pair (Abs (V 2) (Var 2)) (Abs (V 2) (Var 2))) (Fst (Var 3)))
+Just (Fst (Pair (Abs (V 2) (Var 2)) (Abs (V 2) (Var 2))))-}
