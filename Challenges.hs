@@ -535,37 +535,38 @@ isLExprValue (Abs _ _) = True    -- An abstraction is a value
 isLExprValue _ = False           -- Other expressions are not values
 
 cbvLet :: LExpr -> Maybe LExpr
-cbvLet expr@(Var _) = Just expr
-cbvLet expr@(Abs _ _) = Just expr
+-- cbvLet expr@(Var _) = Just expr 
 cbvLet (App e1 e2)
     | not (isLExprValue e1) = cbvLet e1 >>= \e1' -> return (App e1' e2)
     | not (isLExprValue e2) = cbvLet e2 >>= \e2' -> return (App e1 e2')
     | otherwise = apply e1 e2
       where
-        apply :: LExpr -> LExpr -> Maybe LExpr
         apply (Abs (V x) e1) e2 = Just (substLExpr e1 x e2)
         apply _ _ = Nothing
-
-cbvLet (Let (V n) e1 e2)
-    | not (isLExprValue e1) = cbvLet e1 >>= \e1' -> return (Let (V n) e1' e2)
-    | otherwise = let lamE2 = letEnc e2 in return (lamEnc (subst lamE2 n (letEnc e1)))
-
+cbvLet (Let bind e1 e2)
+    | bind == Discard && not (isLExprValue e1) = cbvLet e1 >>= \e1' -> return (Let bind e1' e2)
+    | bind == Discard && not (isLExprValue e2) = cbvLet e2 >>= \e2' -> return (Let bind e1 e2')
+    | bind == Discard && isLExprValue e2 = Just e2
+    | not (isLExprValue e1) = cbvLet e1 >>= \e1' -> return (Let bind e1' e2)
+    | not (isLExprValue e2) = cbvLet e2 >>= \e2' -> return (Let bind e1 e2')
+    | otherwise = let lamE2 = letEnc e2 in return (lamEnc (subst lamE2 (bindToInt bind) (letEnc e1)))
+      where
+        bindToInt :: Bind -> Int
+        bindToInt (V n) = n
 cbvLet (Pair e1 e2)
     | not (isLExprValue e1) = cbvLet e1 >>= \e1' -> return (Pair e1' e2)
     | not (isLExprValue e2) = cbvLet e2 >>= \e2' -> return (Pair e1 e2')
     | otherwise = Just (Pair e1 e2)
+cbvLet (Fst (Pair e1 e2))
+    | not (isLExprValue e1) = cbvLet e1 >>= \e1' -> return (Fst (Pair e1' e2))
+    | not (isLExprValue e2) = cbvLet e2 >>= \e2' -> return (Fst (Pair e1 e2'))
+    | otherwise = Just e1
+cbvLet (Snd (Pair e1 e2))
+    | not (isLExprValue e1) = cbvLet e1 >>= \e1' -> return (Snd (Pair e1' e2))
+    | not (isLExprValue e2) = cbvLet e2 >>= \e2' -> return (Snd (Pair e1 e2'))
+    | otherwise = Just e2
+cbvLet _ = Nothing
 
-cbvLet (Fst e)
-    | not (isLExprValue e) = cbvLet e >>= \e' -> return (Fst e')
-    | otherwise = case e of
-        Pair e1 _ -> Just e1
-        _ -> Nothing
-
-cbvLet (Snd e)
-    | not (isLExprValue e) = cbvLet e >>= \e' -> return (Snd e')
-    | otherwise = case e of
-        Pair _ e2 -> Just e2
-        _ -> Nothing
 
 lamEnc :: LamExpr -> LExpr
 lamEnc (LamVar n) = Var n
@@ -573,13 +574,12 @@ lamEnc (LamApp e1 e2) = App (lamEnc e1) (lamEnc e2)
 lamEnc (LamAbs n e) = Abs (V n) (lamEnc e)
 
 cbnLet :: LExpr -> Maybe LExpr
-cbnLet expr@(Var _) = Just expr
-cbnLet expr@(Abs _ _) = Just expr
 cbnLet (App e1 e2) = case cbnLet e1 of
     Just (Abs (V x) e1') -> Just (substLExpr e1' x e2)
     Just e1' -> Just (App e1' e2)
     Nothing -> Nothing
 cbnLet (Let (V n) e1 e2) = Just (substLExpr e2 n e1)
+cbnLet (Let Discard e1 e2) = Just e2
 cbnLet (Pair e1 e2) = Just (Pair e1 e2)  -- In call-by-name, we don't reduce the components of a pair
 cbnLet (Fst e) = case cbnLet e of
     Just (Pair e1 _) -> Just e1
@@ -587,9 +587,18 @@ cbnLet (Fst e) = case cbnLet e of
 cbnLet (Snd e) = case cbnLet e of
     Just (Pair _ e2) -> Just e2
     _ -> Nothing
+cbnLet _ = Nothing
 
-countReductions :: (LamExpr -> Maybe LamExpr) -> LamExpr -> Int -> Int
-countReductions reduce expr limit = go 0 expr
+countLamReductions :: (LamExpr -> Maybe LamExpr) -> LamExpr -> Int -> Int
+countLamReductions reduce expr limit = go 0 expr
+  where
+    go n e | n >= limit = limit
+           | otherwise = case reduce e of
+                           Just e' -> go (n + 1) e'
+                           Nothing -> n
+
+countLetReductions :: (LExpr -> Maybe LExpr) -> LExpr -> Int -> Int
+countLetReductions reduce expr limit = go 0 expr
   where
     go n e | n >= limit = limit
            | otherwise = case reduce e of
@@ -597,18 +606,26 @@ countReductions reduce expr limit = go 0 expr
                            Nothing -> n
 
 compareRedn :: LExpr -> Int -> (Int, Int, Int, Int)
-compareRedn expr limit =
-  let lamExpr = letEnc expr
-      cbvSteps = countReductions cbvlam1 lamExpr limit
-      cbnSteps = countReductions cbnlam1 lamExpr limit
-  in (cbvSteps, cbnSteps, cbvSteps, cbnSteps)
+compareRedn expr limit = 
+  ( countLetReductions cbvLet expr limit
+  , countLamReductions cbvlam1 (letEnc expr) limit
+  , countLetReductions cbnLet expr limit
+  , countLamReductions cbnlam1 (letEnc expr) limit
+  )
+  where
+    maybeLamExprToLamExpr :: Maybe LamExpr -> LamExpr
+    maybeLamExprToLamExpr (Just expr) = expr
+    maybeLamExprToLamExpr Nothing = error "Evaluation failed"
 
 
 
 
 
+ex::LExpr
+ex=(Let Discard (App (Abs (V 1) (Var 1)) (App (Abs (V 1) (Var 1)) (Abs (V 1) (Var 1)))) (Snd (Pair (App (Abs (V 1) (Var 1)) (Abs (V 1) (Var 1))) (Abs (V 1) (Var 1)))))
 
-
+ex1 :: LExpr
+ex1=(Let (V 3) (Pair (App (Abs (V 1) (App (Var 1) (Var 1))) (Abs (V 2) (Var 2))) (App (Abs (V 1) (App (Var 1) (Var 1))) (Abs (V 2) (Var 2)))) (Fst (Var 3)))
 
 
 le::Puzzle
