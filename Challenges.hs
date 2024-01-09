@@ -19,6 +19,7 @@ import Data.Char
 import Control.Applicative
 import Control.Monad
 import GHC.CmmToAsm.AArch64.Instr (x0)
+import Foreign.C (e2BIG)
 
 -- Challenge 1
 -- Testing Circuits
@@ -531,33 +532,53 @@ substLExpr (Pair e1 e2) y e = Pair (substLExpr e1 y e) (substLExpr e2 y e)
 substLExpr (Fst e1) y e = Fst (substLExpr e1 y e)
 substLExpr (Snd e1) y e = Snd (substLExpr e1 y e)
 
-
-
 isLExprValue :: LExpr -> Bool
 isLExprValue (Var _) = True      -- A variable is a value
 isLExprValue (Abs _ _) = True    -- An abstraction is a value
+isLExprValue (App (Var _) (Var _)) = True
+isLExprValue (Pair _ _) = True
+isLExprValue (Fst _) = True 
+isLExprValue (Snd _) = True
 isLExprValue _ = False           -- Other expressions are not values
 
 cbvLet :: LExpr -> Maybe LExpr
--- cbvLet expr@(Var _) = Just expr 
-cbvLet (App e1 e2)
-    | not (isLExprValue e1) = cbvLet e1 >>= \e1' -> return (App e1' e2)
-    | not (isLExprValue e2) = cbvLet e2 >>= \e2' -> return (App e1 e2')
-    | otherwise = apply e1 e2
+-- 
+cbvLet (App (Abs bind e1) e2)
+    | not (isLExprValue e1) = cbvLet e1 >>= \e1' -> return (App (Abs bind e1') e2)
+    | not (isLExprValue e2) = cbvLet e2 >>= \e2' -> return (App (Abs bind e1) e2')
+    | isLExprValue e1 && isLExprValue e2 = return (substLExpr e1 (bindToInt bind) e2)
       where
-        apply (Abs (V x) e1) e2 = Just (substLExpr e1 x e2)
-        apply _ _ = Nothing
+          bindToInt :: Bind -> Int
+          bindToInt (V n) = n
+
 cbvLet (Let bind e1 e2)
     | bind == Discard && not (isLExprValue e1) = cbvLet e1 >>= \e1' -> return (Let bind e1' e2)
     | bind == Discard && not (isLExprValue e2) = cbvLet e2 >>= \e2' -> return (Let bind e1 e2')
-    | bind == Discard && isLExprValue e2 = Just e2
+    | bind == Discard && isLExprValue e1 && isLExprValue e2 = return e1
     | not (isLExprValue e1) = cbvLet e1 >>= \e1' -> return (Let bind e1' e2)
     | not (isLExprValue e2) = cbvLet e2 >>= \e2' -> return (Let bind e1 e2')
-    -- not Discard but is value
-    | otherwise = cbvLet e1 >>= \e1' -> return (Let bind e1' e2)
+    | isLExprValue e1 && isLExprValue e2 = return (substLExpr e1 (bindToInt bind) e2)
       where
-        bindToInt :: Bind -> Int
-        bindToInt (V n) = n
+          bindToInt :: Bind -> Int
+          bindToInt (V n) = n
+
+{-cbvLet (Let bind e1 e2) 
+  | not (isLExprValue e1) =
+    do
+      e' <- cbvLet e1 
+      return (Let bind e' e2)
+  | not (isLExprValue e2) =
+    do
+      e' <- cbvLet e2 
+      return (Let bind e1 e')
+  | isLExprValue e1 && isLExprValue e2 =
+      return (substLExpr e1 (bindToInt bind) e2)                       
+
+  where
+    bindToInt :: Bind -> Int
+    bindToInt (V n) = n
+    -}
+    
 cbvLet (Pair e1 e2)
     | not (isLExprValue e1) = cbvLet e1 >>= \e1' -> return (Pair e1' e2)
     | not (isLExprValue e2) = cbvLet e2 >>= \e2' -> return (Pair e1 e2')
