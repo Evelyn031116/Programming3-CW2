@@ -18,8 +18,6 @@ import Parsing
 import Data.Char
 import Control.Applicative
 import Control.Monad
-import GHC.CmmToAsm.AArch64.Instr (x0)
-import Foreign.C (e2BIG)
 
 -- Challenge 1
 -- Testing Circuits
@@ -523,86 +521,92 @@ cbnlam1 _ = Nothing
 -- LET --
 --------- 
 substLExpr :: LExpr -> Int -> LExpr -> LExpr
+substLExpr (Let Discard e1 e2) _ _ = e2
 substLExpr (Var x) y e | x == y = e
 substLExpr (Var x) y e | x /= y = Var x
 substLExpr (App e1 e2) y e = App (substLExpr e1 y e) (substLExpr e2 y e)
-substLExpr (Abs bind e1) y e = Abs bind (substLExpr e1 y e) 
+substLExpr (Abs bind e1) y e = Abs bind (substLExpr e1 y e)
 substLExpr (Let bind e1 e2) y e = Let bind (substLExpr e1 y e) (substLExpr e2 y e)
 substLExpr (Pair e1 e2) y e = Pair (substLExpr e1 y e) (substLExpr e2 y e)
 substLExpr (Fst e1) y e = Fst (substLExpr e1 y e)
 substLExpr (Snd e1) y e = Snd (substLExpr e1 y e)
 
 isLExprValue :: LExpr -> Bool
-isLExprValue (Var _) = True      -- A variable is a value
-isLExprValue (Abs _ _) = True    -- An abstraction is a value
-isLExprValue (App (Var _) (Var _)) = True
-isLExprValue (Pair _ _) = True
-isLExprValue (Fst _) = True 
-isLExprValue (Snd _) = True
-isLExprValue _ = False           -- Other expressions are not values
+isLExprValue expr = case cbvLet expr of
+    Nothing -> True
+    Just _  -> False
+
+bindToInt :: Bind -> Int
+bindToInt (V n) = n
 
 cbvLet :: LExpr -> Maybe LExpr
--- 
+
 cbvLet (App (Abs bind e1) e2)
-    | not (isLExprValue e1) = cbvLet e1 >>= \e1' -> return (App (Abs bind e1') e2)
-    | not (isLExprValue e2) = cbvLet e2 >>= \e2' -> return (App (Abs bind e1) e2')
-    | isLExprValue e1 && isLExprValue e2 = return (substLExpr e1 (bindToInt bind) e2)
-      where
-          bindToInt :: Bind -> Int
-          bindToInt (V n) = n
-
-cbvLet (Let bind e1 e2)
-    | bind == Discard && not (isLExprValue e1) = cbvLet e1 >>= \e1' -> return (Let bind e1' e2)
-    | bind == Discard && not (isLExprValue e2) = cbvLet e2 >>= \e2' -> return (Let bind e1 e2')
-    | bind == Discard && isLExprValue e1 && isLExprValue e2 = return e1
-    | not (isLExprValue e1) = cbvLet e1 >>= \e1' -> return (Let bind e1' e2)
-    | not (isLExprValue e2) = cbvLet e2 >>= \e2' -> return (Let bind e1 e2')
-    | isLExprValue e1 && isLExprValue e2 = return (substLExpr e1 (bindToInt bind) e2)
-      where
-          bindToInt :: Bind -> Int
-          bindToInt (V n) = n
-
-{-cbvLet (Let bind e1 e2) 
   | not (isLExprValue e1) =
     do
-      e' <- cbvLet e1 
+      e' <- cbvLet e1
+      return (App (Abs bind e') e2)
+  | not (isLExprValue e2) =
+    do
+      e' <- cbvLet e2
+      return (App (Abs bind e1) e')
+  | isLExprValue e1 && isLExprValue e2 = case bind of
+          V n -> return (substLExpr e1 n e2)
+          Discard -> return e1
+
+cbvLet (Let bind e1 e2)
+  | not (isLExprValue e1) =
+    do
+      e' <- cbvLet e1
       return (Let bind e' e2)
   | not (isLExprValue e2) =
     do
-      e' <- cbvLet e2 
+      e' <- cbvLet e2
       return (Let bind e1 e')
-  | isLExprValue e1 && isLExprValue e2 =
-      return (substLExpr e1 (bindToInt bind) e2)                       
+  | isLExprValue e1 && isLExprValue e2 = case bind of
+          V n -> return (substLExpr e2 n e1)
+          Discard -> return e1
 
-  where
-    bindToInt :: Bind -> Int
-    bindToInt (V n) = n
-    -}
-    
 cbvLet (Pair e1 e2)
-    | not (isLExprValue e1) = cbvLet e1 >>= \e1' -> return (Pair e1' e2)
-    | not (isLExprValue e2) = cbvLet e2 >>= \e2' -> return (Pair e1 e2')
-    | otherwise = Just (Pair e1 e2)
+  | not (isLExprValue e1) =
+    do
+      e' <- cbvLet e1
+      return (Pair e' e2)
+  | not (isLExprValue e2) =
+    do
+      e' <- cbvLet e2
+      return (Pair e1 e')
+
 cbvLet (Fst (Pair e1 e2))
-    | not (isLExprValue e1) = cbvLet e1 >>= \e1' -> return (Fst (Pair e1' e2))
-    | not (isLExprValue e2) = cbvLet e2 >>= \e2' -> return (Fst (Pair e1 e2'))
-    | otherwise = Just e1
+  | not (isLExprValue e1) =
+    do
+      e' <- cbvLet e1
+      return (Fst (Pair e' e2))
+  | not (isLExprValue e2) =
+    do
+      e' <- cbvLet e2
+      return (Fst (Pair e1 e'))
+  | isLExprValue e1 && isLExprValue e2 =
+      return e1
+
 cbvLet (Snd (Pair e1 e2))
-    | not (isLExprValue e1) = cbvLet e1 >>= \e1' -> return (Snd (Pair e1' e2))
-    | not (isLExprValue e2) = cbvLet e2 >>= \e2' -> return (Snd (Pair e1 e2'))
-    | otherwise = Just e2
+  | not (isLExprValue e1) =
+    do
+      e' <- cbvLet e1
+      return (Snd (Pair e' e2))
+  | not (isLExprValue e2) =
+    do
+      e' <- cbvLet e2
+      return (Snd (Pair e1 e'))
+  | isLExprValue e1 && isLExprValue e2 =
+      return e2
+
 cbvLet _ = Nothing
-
-
-lamEnc :: LamExpr -> LExpr
-lamEnc (LamVar n) = Var n
-lamEnc (LamApp e1 e2) = App (lamEnc e1) (lamEnc e2)
-lamEnc (LamAbs n e) = Abs (V n) (lamEnc e)
 
 cbnLet :: LExpr -> Maybe LExpr
 cbnLet (App (Abs Discard e1) e2) = Just e1
 cbnLet (App (Abs b e1) e2) = Just (substLExpr e1 (bindToInt b) e2)
-  where 
+  where
      bindToInt :: Bind -> Int
      bindToInt (V n) = n
 cbnLet (Let (V n) e1 e2) = Just (substLExpr e2 n e1)
@@ -629,47 +633,9 @@ countLetReductions reduce expr limit = go 0 expr
                            Nothing -> n
 
 compareRedn :: LExpr -> Int -> (Int, Int, Int, Int)
-compareRedn expr limit = 
+compareRedn expr limit =
   ( countLetReductions cbvLet expr limit
   , countLamReductions cbvlam1 (letEnc expr) limit
   , countLetReductions cbnLet expr limit
   , countLamReductions cbnlam1 (letEnc expr) limit
   )
-  where
-    maybeLamExprToLamExpr :: Maybe LamExpr -> LamExpr
-    maybeLamExprToLamExpr (Just expr) = expr
-    maybeLamExprToLamExpr Nothing = error "Evaluation failed"
-
-
-
-ex1 :: LExpr
-ex1 = (Let (V 3) (Pair (App (Abs (V 1) (App (Var 1) (Var 1))) (Abs (V 2) (Var 2))) (App (Abs (V 1) (App (Var 1) (Var 1))) (Abs (V 2) (Var 2)))) (Fst (Var 3)))
-
-ex2 :: LExpr
-ex2 = (Let Discard (App (Abs (V 1) (Var 1)) (App (Abs (V 1) (Var 1)) (Abs (V 1) (Var 1)))) (Snd (Pair (App (Abs (V 1) (Var 1)) (Abs (V 1) (Var 1))) (Abs (V 1) (Var 1)))))
-
-ex3 :: LExpr
-ex3 =  (Let (V 2) (Let (V 1) (Abs (V 0) (App (Var 0) (Var 0))) (App (Var 1) (Var 1))) (Snd (Pair (Var 2) (Abs (V 1) (Var 1)))))
-
-
-le::Puzzle
-le=[[ Wire [West, South], Wire [West, East], Source [South] ], [ Wire [South,East], Wire [North,South], Wire [East,North] ], [ Sink [East] , Wire [North,South] , Wire [North,West] ] ]
-le1::Puzzle
-le1=[ [ Wire [East, South], Wire [West, East], Source [West] ], [ Wire [North,East], Wire [East,West], Wire [West,South] ], [ Sink [East] , Wire [West,East] , Wire [North,West] ] ]
-le2::Puzzle
-le2=[[Source [South, West], Source [North, South, West], Source [North, South, West], Source [North, South, West], Source [North, South, West], Sink [North, South, West], Sink [North, South, West], Sink [North, South, West], Sink [North, South, West], Sink [North, West]], [Source [East, South, West], Source [North, East, South], Source [North, East, South], Source [North, East, South], Source [North, East, South], Sink [North, East, South], Sink [North, East, South], Sink [North, East, South], Sink [North, East, South], Sink [North, East, West]], [Source [East, South, West], Source [North, South, West], Source [North, South, West], Source [North, South, West], Source [North, South, West], Sink [North, South, West], Sink [North, South, West], Sink [North, South, West], Sink [North, South, West], Sink [North, East, West]], [Source [East, South, West], Source [North, East, South], Source [North, East, South], Source [North, East, South], Source [North, East, South], Sink [North, East, South], Sink [North, East, South], Sink [North, East, South], Sink [North, East, South], Sink [North, East, West]], [Source [East, South, West], Source [North, South, West], Source [North, South, West], Source [North, South, West], Source [North, South, West], Sink [North, South, West], Sink [North, South, West], Sink [North, South, West], Sink [North, South, West], Sink [North, East, West]], [Source [East, South, West], Source [North, East, South], Source [North, East, South], Source [North, East, South], Source [North, East, South], Sink [North, East, South], Sink [North, East, South], Sink [North, East, South], Sink [North, East, South], Sink [North, East, West]], [Source [East, South, West], Source [North, South, West], Source [North, South, West], Source [North, South, West], Source [North, South, West], Sink [North, South, West], Sink [North, South, West], Sink [North, South, West], Sink [North, South, West], Sink [North, East, West]], [Source [East, South, West], Source [North, East, South], Source [North, East, South], Source [North, East, South], Source [North, East, South], Sink [North, East, South], Sink [North, East, South], Sink [North, East, South], Sink [North, East, South], Sink [North, East, West]], [Source [East, South, West], Source [North, South, West], Source [North, South, West], Source [North, South, West], Source [North, South, West], Sink [North, South, West], Sink [North, South, West], Sink [North, South, West], Sink [North, South, West], Sink [North, East, West]], [Source [East, South], Source [North, East, South], Source [North, East, South], Source [North, East, South], Source [North, East, South], Sink [North, East, South], Sink [North, East, South], Sink [North, East, South], Sink [North, East, South], Sink [North, East]]]
-
-{-Just (Let (V 3) (Pair (App (Abs (V 2) (Var 2)) (Abs (V 2) (Var 2))) (App (Abs (V 1) (App (Var 1) (Var 1))) (Abs (V 2) (Var 2)))) (Fst (Var 3)))
-Just (Let (V 3) (Pair (App (Abs (V 2) (Var 2)) (Abs (V 2) (Var 2))) (App (Abs (V 1) (App (Var 1) (Var 1))) (Abs (V 2) (Var 2)))) (Fst (Var 3)))
-
-Just (Let (V 3) (Pair (Abs (V 2) (Var 2)) (App (Abs (V 1) (App (Var 1) (Var 1))) (Abs (V 2) (Var 2)))) (Fst (Var 3)))
-Just (Let (V 3) (Pair (Abs (V 2) (Var 2)) (App (Abs (V 1) (App (Var 1) (Var 1))) (Abs (V 2) (Var 2)))) (Fst (Var 3)))
-
-Just (Let (V 3) (Pair (Abs (V 2) (Var 2)) (App (Abs (V 2) (Var 2)) (Abs (V 2) (Var 2)))) (Fst (Var 3)))
-Just (Let (V 3) (Pair (Abs (V 2) (Var 2)) (App (Abs (V 2) (Var 2)) (Abs (V 2) (Var 2)))) (Fst (Var 3)))
-
-Just (Let (V 3) (Pair (Abs (V 2) (Var 2)) (Abs (V 2) (Var 2))) (Fst (Var 3)))
-Just (Let (V 3) (Pair (Abs (V 2) (Var 2)) (Abs (V 2) (Var 2))) (Fst (Var 3)))
-
-Just (Let (V 3) (Pair (Abs (V 2) (Var 2)) (Abs (V 2) (Var 2))) (Fst (Var 3)))
-Just (Fst (Pair (Abs (V 2) (Var 2)) (Abs (V 2) (Var 2))))-}
