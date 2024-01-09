@@ -521,12 +521,12 @@ cbnlam1 _ = Nothing
 -- LET --
 --------- 
 substLExpr :: LExpr -> Int -> LExpr -> LExpr
-substLExpr (Let Discard e1 e2) _ _ = e2
 substLExpr (Var x) y e | x == y = e
 substLExpr (Var x) y e | x /= y = Var x
 substLExpr (App e1 e2) y e = App (substLExpr e1 y e) (substLExpr e2 y e)
 substLExpr (Abs bind e1) y e = Abs bind (substLExpr e1 y e)
 substLExpr (Let bind e1 e2) y e = Let bind (substLExpr e1 y e) (substLExpr e2 y e)
+substLExpr (Let Discard e1 e2) _ _ = e2
 substLExpr (Pair e1 e2) y e = Pair (substLExpr e1 y e) (substLExpr e2 y e)
 substLExpr (Fst e1) y e = Fst (substLExpr e1 y e)
 substLExpr (Snd e1) y e = Snd (substLExpr e1 y e)
@@ -536,11 +536,7 @@ isLExprValue expr = case cbvLet expr of
     Nothing -> True
     Just _  -> False
 
-bindToInt :: Bind -> Int
-bindToInt (V n) = n
-
 cbvLet :: LExpr -> Maybe LExpr
-
 cbvLet (App (Abs bind e1) e2)
   | not (isLExprValue e1) =
     do
@@ -611,7 +607,7 @@ cbnLet (App (Abs b e1) e2) = Just (substLExpr e1 (bindToInt b) e2)
      bindToInt (V n) = n
 cbnLet (Let (V n) e1 e2) = Just (substLExpr e2 n e1)
 cbnLet (Let Discard e1 e2) = Just e2
-cbnLet (Pair e1 e2) = Just e1  -- In call-by-name, we don't reduce the components of a pair
+cbnLet (Pair e1 e2) = Just e1
 cbnLet (Fst (Pair e1 e2)) = Just e1
 cbnLet (Snd (Pair e1 e2)) = Just e2
 cbnLet _ = Nothing
