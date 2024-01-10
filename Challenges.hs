@@ -1,8 +1,9 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE ParallelListComp #-}
 {-# OPTIONS_GHC -Wno-overlapping-patterns #-}
--- comp2209 Functional Programming Challenges
--- (c) University of Southampton 2021
+-- Jingyi Zhong comp2209 Functional Programming Challenges
+-- jz14g22@soton.ac.uk
+-- (c) University of Southampton 2023
 -- Skeleton code to be updated with your solutions
 -- The dummy functions here simply return an arbitrary value that is usually wrong 
 
@@ -159,7 +160,7 @@ data Rotation = R0 | R90 | R180 | R270
 
 -- Solve the circuit puzzle, returning a solution as a list of lists of Rotations, if one exists.
 solveCircuit :: Puzzle -> Maybe [[Rotation]]
-solveCircuit puzzle = backtrack puzzle (0, 0) (initialRotations puzzle) []
+solveCircuit puzzle = backtrack puzzle (0, 0) (initialRotations puzzle) [] 
 
 -- Initialize the rotations for all tiles in the puzzle to R0.
 initialRotations :: Puzzle -> [[Rotation]]
@@ -255,26 +256,35 @@ rotateAndGetEdges puzzle rotations (i, j) = getEdges $ transferToRotateTile (rot
 
 -- The backtrack function attempts to solve the puzzle by recursively trying different rotations for each tile.
 -- It either returns a solution as a list of rotations for each tile or Nothing if no solution exists.
-backtrack :: Puzzle -> (Int, Int) -> [[Rotation]] -> [((Int, Int), Rotation)] -> Maybe [[Rotation]]
-backtrack puzzle (i, j) rotations nextList
+backtrack :: Puzzle -> (Int, Int) -> [[Rotation]] -> [((Int, Int), Rotation)]    -> Maybe [[Rotation]]
+backtrack puzzle (i, j) rotations nextList 
   -- Check if the end of the puzzle has been reached and if the puzzle is complete.
-  | isEnd (i, j) puzzle && isPuzzleComplete (rotatePuzzle rotations puzzle) = Just rotations
+  | isEnd (i, j) puzzle && isPuzzleComplete (rotatePuzzle rotations puzzle)= Just rotations
   -- Try rotation R0, R90, R180 and R270 one by one for the current tile, and if the result is correct, proceed to the next tile.
   -- Then save the next node of the same layer to nextList for easy backtracking.
-  | isCorrectAnswer puzzle (i, j) (addCorrectAnswer (i, j) rotations R0) =
-      backtrack puzzle (nextTile (i, j) puzzle) (addCorrectAnswer (i, j) rotations R0) (((i, j), R90) : nextList)
-  | isCorrectAnswer puzzle (i, j) (addCorrectAnswer (i, j) rotations R90) =
-      backtrack puzzle (nextTile (i, j) puzzle) (addCorrectAnswer (i, j) rotations R90) (((i, j), R180) : nextList)
-  | isCorrectAnswer puzzle (i, j) (addCorrectAnswer (i, j) rotations R180) =
-      backtrack puzzle (nextTile (i, j) puzzle) (addCorrectAnswer (i, j) rotations R180) (((i, j), R270) : nextList)
-  | isCorrectAnswer puzzle (i, j) (addCorrectAnswer (i, j) rotations R270) =
-      backtrack puzzle (nextTile (i, j) puzzle) (addCorrectAnswer (i, j) rotations R270) nextList
+  | isCorrectAnswer puzzle (i, j) (addCorrectAnswer (i, j) rotations R0)  && (not.null) nextList &&  checkBt R0 ((snd . head) nextList) =
+      backtrack puzzle (nextTile (i, j) puzzle) (addCorrectAnswer (i, j) rotations R0) (((i, j), R90) : nextList) 
+  | isCorrectAnswer puzzle (i, j) (addCorrectAnswer (i, j) rotations R90) && (not.null) nextList &&  checkBt R90 ((snd . head) nextList)  =
+      backtrack puzzle (nextTile (i, j) puzzle) (addCorrectAnswer (i, j) rotations R90) (((i, j), R180) : nextList) 
+  | isCorrectAnswer puzzle (i, j) (addCorrectAnswer (i, j) rotations R180) && (not.null) nextList &&  checkBt R180 ((snd . head) nextList)  =
+      backtrack puzzle (nextTile (i, j) puzzle) (addCorrectAnswer (i, j) rotations R180) (((i, j), R270) : nextList) 
+  | isCorrectAnswer puzzle (i, j) (addCorrectAnswer (i, j) rotations R270) && (not.null) nextList &&  checkBt R270 ((snd . head) nextList)  =
+      backtrack puzzle (nextTile (i, j) puzzle) (addCorrectAnswer (i, j) rotations R270) nextList 
   | null nextList = Nothing
   -- If all rotations for the current tile lead to an incorrect answer, backtrack to the previous tile and try the next rotation.
   | otherwise =
-    backtrack puzzle (fst (head nextList)) (deleteWrongAnswerAndAddNewAnswer rotations (head nextList)) (drop 1 nextList)
+    backtrack puzzle (fst (head nextList)) (deleteWrongAnswerAndAddNewAnswer rotations (head nextList)) (drop 1 nextList) 
 
   where
+    checkBt :: Rotation -> Rotation -> Bool
+    checkBt currr btr
+      | btr == R90  && currr == R90  = True
+      | btr == R90  && currr == R180 = True
+      | btr == R90  && currr == R270 = True
+      | btr == R180 && currr == R270 = True
+      | btr == R180 && currr == R270 = True
+      | btr == R270 && currr == R270 = True
+      | otherwise = False
     -- Add the correct rotation to the puzzle for a given tile.
     addCorrectAnswer :: (Int, Int) -> [[Rotation]] -> Rotation -> [[Rotation]]
     addCorrectAnswer (i, j) rotations newRotation =
@@ -725,3 +735,9 @@ compareRedn expr limit =
   , countLetReductions cbnLet expr limit
   , countLamReductions cbnlam1 (letEnc expr) limit
   )
+
+ex1 :: Puzzle
+ex1 = [[Source [South, West], Source [North, South, West], Source [North, South, West], Source [North, South, West], Source [North, South, West], Sink [North, South, West], Sink [North, South, West], Sink [North, South, West], Sink [North, South, West], Sink [North, West]], [Source [East, South, West], Source [North, East, South], Source [North, East, South], Source [North, East, South], Source [North, East, South], Sink [North, East, South], Sink [North, East, South], Sink [North, East, South], Sink [North, East, South], Sink [North, East, West]], [Source [East, South, West], Source [North, South, West], Source [North, South, West], Source [North, South, West], Source [North, South, West], Sink [North, South, West], Sink [North, South, West], Sink [North, South, West], Sink [North, South, West], Sink [North, East, West]], [Source [East, South, West], Source [North, East, South], Source [North, East, South], Source [North, East, South], Source [North, East, South], Sink [North, East, South], Sink [North, East, South], Sink [North, East, South], Sink [North, East, South], Sink [North, East, West]], [Source [East, South, West], Source [North, South, West], Source [North, South, West], Source [North, South, West], Source [North, South, West], Sink [North, South, West], Sink [North, South, West], Sink [North, South, West], Sink [North, South, West], Sink [North, East, West]], [Source [East, South, West], Source [North, East, South], Source [North, East, South], Source [North, East, South], Source [North, East, South], Sink [North, East, South], Sink [North, East, South], Sink [North, East, South], Sink [North, East, South], Sink [North, East, West]], [Source [East, South, West], Source [North, South, West], Source [North, South, West], Source [North, South, West], Source [North, South, West], Sink [North, South, West], Sink [North, South, West], Sink [North, South, West], Sink [North, South, West], Sink [North, East, West]], [Source [East, South, West], Source [North, East, South], Source [North, East, South], Source [North, East, South], Source [North, East, South], Sink [North, East, South], Sink [North, East, South], Sink [North, East, South], Sink [North, East, South], Sink [North, East, West]], [Source [East, South, West], Source [North, South, West], Source [North, South, West], Source [North, South, West], Source [North, South, West], Sink [North, South, West], Sink [North, South, West], Sink [North, South, West], Sink [North, South, West], Sink [North, East, West]], [Source [East, South], Source [North, East, South], Source [North, East, South], Source [North, East, South], Source [North, East, South], Sink [North, East, South], Sink [North, East, South], Sink [North, East, South], Sink [North, East, South], Sink [North, East]]]
+
+ex2 :: Puzzle
+ex2 = [[Source[East],Wire[West,East],Wire[West,East],Wire[West,South]],[Wire[South,East],Wire[West,East],Wire[East,West],Wire[West,North]],[Wire[North,South,East],Wire[West,East],Wire[West,East],Wire[West,East]],[Wire[North,East],Wire[West,East],Wire[West,North],Sink[West]]]
